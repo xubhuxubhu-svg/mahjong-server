@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>台灣16張麻將 — 3D風格預覽</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root {
+    --cream: #FDF6EC;
+    --pink: #FBE3E3;
+    --ink: #4A3F3F;
+    --accent: #2E7AB8;
+    --panel-bg: rgba(255, 250, 244, 0.9);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    background: linear-gradient(180deg, var(--cream) 0%, var(--pink) 100%);
+    color: var(--ink);
+  }
+  #canvas-wrap { position: absolute; inset: 0; }
+  canvas { display: block; touch-action: none; }
+
+  #title-bar {
+    position: absolute;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel-bg);
+    padding: 10px 22px;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 4px 14px rgba(74, 63, 63, 0.12);
+    pointer-events: none;
+  }
+
+  #hint {
+    position: absolute;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel-bg);
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--ink);
+    opacity: 0.85;
+    box-shadow: 0 4px 14px rgba(74, 63, 63, 0.1);
+    pointer-events: none;
+    text-align: center;
+    max-width: 90vw;
+  }
+
+  #controls {
+    position: absolute;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #theme-controls {
+    position: absolute;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .btn {
+    background: var(--panel-bg);
+    border: none;
+    border-radius: 16px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    box-shadow: 0 4px 14px rgba(74, 63, 63, 0.12);
+    cursor: pointer;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn.active { background: var(--accent); color: #FFF8ED; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --cream: #2B2530;
+      --pink: #3A2E33;
+      --ink: #F3E9E9;
+      --panel-bg: rgba(43, 37, 48, 0.82);
+    }
+  }
+  :root[data-theme="dark"] {
+    --cream: #2B2530;
+    --pink: #3A2E33;
+    --ink: #F3E9E9;
+    --panel-bg: rgba(43, 37, 48, 0.82);
+  }
+
+  /* ---------- 大廳／操作面板／結算面板 ---------- */
+  #lobby-overlay, #result-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(30, 24, 28, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
+  .lobby-card {
+    background: var(--panel-bg);
+    border-radius: 20px;
+    padding: 24px 26px;
+    width: min(420px, 88vw);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    max-height: 86vh;
+    overflow-y: auto;
+  }
+  .lobby-card h2 { margin: 0 0 14px; font-size: 20px; }
+  .lobby-card label { display: block; font-size: 12px; opacity: 0.75; margin: 10px 0 4px; }
+  .lobby-card input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.12);
+    font-size: 14px;
+    background: rgba(255,255,255,0.7);
+    color: var(--ink);
+  }
+  .lobby-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .lobby-or { font-size: 12px; opacity: 0.6; }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-secondary {
+    background: rgba(0,0,0,0.08);
+    color: var(--ink);
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #lobby-status { font-size: 13px; margin-top: 10px; min-height: 18px; color: #b3453a; }
+  .room-code-display { font-size: 14px; margin-bottom: 10px; }
+  #seat-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .seat-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(0,0,0,0.05); border-radius: 10px; padding: 8px 12px; font-size: 13px;
+  }
+  .seat-row button { font-size: 12px; padding: 6px 10px; border-radius: 8px; border: none; background: var(--accent); color: #fff; cursor: pointer; }
+
+  #action-panel {
+    position: absolute;
+    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel-bg);
+    border-radius: 18px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.2);
+    z-index: 15;
+  }
+  #action-panel .action-title { font-size: 13px; font-weight: 600; }
+  #action-panel .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #action-panel button {
+    border: none; border-radius: 12px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #action-panel .btn-yes { background: var(--accent); color: #fff; }
+  #action-panel .btn-no { background: rgba(0,0,0,0.1); color: var(--ink); }
+
+  #game-hud {
+    position: absolute;
+    top: calc(70px + env(safe-area-inset-top, 0px));
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    z-index: 12;
+  }
+  #round-info {
+    background: var(--panel-bg);
+    border-radius: 12px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+<div id="title-bar">🀄 台灣16張麻將 · 連線對局</div>
+<div id="theme-controls">
+  <button class="btn active" id="btn-theme-underwater">🐠 海底</button>
+  <button class="btn" id="btn-theme-beach">🏖️ 沙灘</button>
+  <button class="btn" id="btn-theme-snow">❄️ 雪夜</button>
+  <button class="btn" id="btn-theme-onsen">♨️ 溫泉</button>
+</div>
+<div id="controls">
+  <button class="btn active" id="btn-seat">座位視角</button>
+  <button class="btn" id="btn-top">俯視</button>
+</div>
+<div id="hint">滾輪縮放・點按鈕切換視角・點自己的牌可以棄牌</div>
+
+<!-- ---------- 大廳畫面：連線伺服器、建房／加入、加AI、開始遊戲 ---------- -->
+<div id="lobby-overlay">
+  <div class="lobby-card">
+    <h2>🀄 台灣16張麻將</h2>
+    <label>伺服器網址</label>
+    <input id="input-server-url" type="text" placeholder="例如 https://your-app.onrender.com" />
+    <label>你的名字</label>
+    <input id="input-name" type="text" placeholder="輸入你的名字" value="玩家" />
+    <div class="lobby-row">
+      <button class="btn-primary" id="btn-create-room">建立新房間</button>
+      <span class="lobby-or">或</span>
+      <input id="input-room-code" type="text" placeholder="輸入房間代碼" maxlength="6" />
+      <button class="btn-primary" id="btn-join-room">加入房間</button>
+    </div>
+    <div id="lobby-status"></div>
+    <div id="seat-panel" style="display:none;">
+      <div class="room-code-display">房間代碼：<b id="room-code-text">—</b>（分享給朋友用這個代碼加入）</div>
+      <div id="seat-list"></div>
+      <button class="btn-primary" id="btn-start-game" disabled>開始遊戲（四個座位都要填滿）</button>
+      <div class="lobby-row" style="margin-top:10px;">
+        <input id="input-load-room-code" type="text" placeholder="用房間代碼＋名字讀取存檔" />
+        <button class="btn-secondary" id="btn-load-game">讀取進度</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- 對局中的操作面板（胡/碰/槓/吃/過水） ---------- -->
+<div id="action-panel" style="display:none;"></div>
+
+<!-- ---------- 結算面板 ---------- -->
+<div id="result-overlay" style="display:none;">
+  <div class="lobby-card" id="result-card"></div>
+</div>
+
+<!-- ---------- 右上角小工具：存檔按鈕、目前局數 ---------- -->
+<div id="game-hud" style="display:none;">
+  <div id="round-info"></div>
+  <button class="btn" id="btn-save-game">💾 存檔</button>
+</div>
+
+<script>
+
+(function () {
+  const wrap = document.getElementById("canvas-wrap");
+
+  // ---------- 基本場景設定 ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xfdf1e6);
+  scene.fog = new THREE.Fog(0xfdf1e6, 18, 34);
+
+  const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  wrap.appendChild(renderer.domElement);
+
+  // ---------- 柔和燈光 ----------
+  const hemi = new THREE.HemisphereLight(0xfff6ea, 0xd8c6b8, 0.65);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff1da, 0.6);
+  sun.position.set(6, 12, 6);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -10;
+  sun.shadow.camera.right = 10;
+  sun.shadow.camera.top = 10;
+  sun.shadow.camera.bottom = -10;
+  scene.add(sun);
+
+  const fill = new THREE.PointLight(0xd7ecff, 0.25, 20);
+  fill.position.set(-6, 6, -4);
+  scene.add(fill);
+
+  // ---------- 地板 ----------
+  // 直接拿掉地板圓盤，背景牆的沙灘/海底圖案本身就有地面感，不需要再疊一層色塊
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0xead9c2, roughness: 1 });
+  // ---------- 麻將桌（四方桌，藍色桌面＋淺藍鑲邊） ----------
+  // 改用單純的方塊幾何建桌子（比擠出幾何可靠，避免法線方向跑掉導致顏色顯示不出來）
+  const tableGroup = new THREE.Group();
+
+  const BORDER_SIZE = 9.6;
+  const FELT_SIZE = 8.2;
+
+  const borderMat = new THREE.MeshStandardMaterial({ color: 0x9fd0ea, roughness: 0.6 });
+  const border = new THREE.Mesh(new THREE.BoxGeometry(BORDER_SIZE, 0.5, BORDER_SIZE), borderMat);
+  border.position.y = 0.25;
+  border.castShadow = true;
+  border.receiveShadow = true;
+  tableGroup.add(border);
+
+  // 桌面花紋：低調的雲紋邊框＋中央淡雅圓形圖騰，避免太素但也不誇張
+  function feltPatternTexture() {
+    const size = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#1f6fae";
+    ctx.fillRect(0, 0, size, size);
+
+    // 四個角落淡淡的雲紋角花
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 5;
+    const corner = 150;
+    [[0, 0, 1, 1], [size, 0, -1, 1], [0, size, 1, -1], [size, size, -1, -1]].forEach(([cx, cy, sx, sy]) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(sx, sy);
+      ctx.beginPath();
+      ctx.moveTo(20, 90);
+      ctx.quadraticCurveTo(70, 60, corner, 20);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(35, 130);
+      ctx.quadraticCurveTo(95, 95, corner + 40, 40);
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 中央淡雅圓形圖騰（簡化蓮花／雲團造型，透明度低，遠看只是質感不會搶戲）
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 150, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 178, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.save();
+      ctx.rotate(a);
+      ctx.beginPath();
+      ctx.ellipse(0, -95, 26, 58, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // 邊緣一圈細緻雲勾紋，增加質感但保持低對比
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 3;
+    const margin = 60;
+    ctx.strokeRect(margin, margin, size - margin * 2, size - margin * 2);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  const feltPatternMat = new THREE.MeshStandardMaterial({ map: feltPatternTexture(), roughness: 0.88 });
+  const feltSideMat = new THREE.MeshStandardMaterial({ color: 0x1a5f97, roughness: 0.88 });
+  // BoxGeometry材質陣列順序：+x -x +y(上面) -y +z -z，只有「上面」那一格要放花紋
+  const feltMaterials = [feltSideMat, feltSideMat, feltPatternMat, feltSideMat, feltSideMat, feltSideMat];
+  const felt = new THREE.Mesh(new THREE.BoxGeometry(FELT_SIZE, 0.12, FELT_SIZE), feltMaterials);
+  felt.position.y = 0.56;
+  felt.receiveShadow = true;
+  tableGroup.add(felt);
+
+  scene.add(tableGroup);
+
+  // ---------- 背景主題（海底／沙灘），全部用程式即時運算動畫，不是外部圖片或GIF ----------
+  function drawSkyGradient(ctx, w, h, colorTop, colorBottom) {
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, colorTop);
+    grad.addColorStop(1, colorBottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  // ---- 海底背景牆（靜態部分：漸層水色＋岩石剪影，動態的魚/氣泡/海草是另外用3D物件做的）
+  function underwaterTexture() {
+    const w = 1600, h = 800;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    drawSkyGradient(ctx, w, h, "#3aa9c9", "#0d4f73");
+    ctx.fillStyle = "rgba(60,140,150,0.35)";
+    for (let i = 0; i < 6; i++) {
+      ctx.beginPath();
+      ctx.arc(i * 300 - 50, h * 0.15, 90 + (i % 3) * 20, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#2c5c4a";
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 60) ctx.lineTo(x, h - 60 - Math.abs(Math.sin(x * 0.02)) * 90);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function beachTexture() {
+    const w = 1600, h = 800;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    drawSkyGradient(ctx, w, h, "#8fd3f0", "#d8f0ee");
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    [[220, 140, 70], [520, 100, 55], [900, 160, 80], [1250, 110, 60]].forEach(([x, y, s]) => {
+      ctx.beginPath();
+      ctx.ellipse(x, y, s, s * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + s * 0.7, y + 8, s * 0.7, s * 0.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(x - s * 0.7, y + 10, s * 0.6, s * 0.35, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#1f77a8";
+    ctx.fillRect(0, h * 0.55, w, h * 0.2);
+    ctx.fillStyle = "#e8d9a8";
+    ctx.fillRect(0, h * 0.72, w, h * 0.28);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // ---- 雪夜背景牆：深藍夜空、光禿樹影、路燈剪影
+  function snowTexture() {
+    const w = 1600, h = 800;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    drawSkyGradient(ctx, w, h, "#16213a", "#2b3a5e");
+    // 星星
+    for (let i = 0; i < 80; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.7})`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * w, Math.random() * h * 0.55, Math.random() * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 光禿樹影
+    ctx.strokeStyle = "rgba(10,16,30,0.55)";
+    ctx.lineWidth = 5;
+    for (let i = 0; i < 6; i++) {
+      const bx = i * 300 + 60;
+      ctx.beginPath();
+      ctx.moveTo(bx, h);
+      ctx.lineTo(bx + 20, h * 0.45);
+      ctx.stroke();
+      for (let b = 0; b < 4; b++) {
+        const by = h * 0.45 + b * 40;
+        ctx.beginPath();
+        ctx.moveTo(bx + 20, by);
+        ctx.lineTo(bx + 20 + (b % 2 === 0 ? 60 : -60), by - 40);
+        ctx.stroke();
+      }
+    }
+    // 路燈剪影＋暖光暈
+    [260, 780, 1300].forEach((x) => {
+      const glow = ctx.createRadialGradient(x, h * 0.42, 5, x, h * 0.42, 90);
+      glow.addColorStop(0, "rgba(255,230,180,0.55)");
+      glow.addColorStop(1, "rgba(255,230,180,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - 90, h * 0.42 - 90, 180, 180);
+      ctx.fillStyle = "#0c1220";
+      ctx.fillRect(x - 4, h * 0.42, 8, h * 0.45);
+      ctx.beginPath();
+      ctx.arc(x, h * 0.42, 14, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // 地面積雪
+    ctx.fillStyle = "#e8eef5";
+    ctx.fillRect(0, h * 0.88, w, h * 0.12);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  // ---- 溫泉背景牆：星空、遠山剪影、木屋暖窗、竹林、燈籠
+  function onsenTexture() {
+    const w = 1600, h = 800;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    drawSkyGradient(ctx, w, h, "#111a35", "#2e3a5c");
+    for (let i = 0; i < 90; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.8})`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * w, Math.random() * h * 0.5, Math.random() * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 遠山剪影
+    ctx.fillStyle = "rgba(40,55,80,0.6)";
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.55);
+    for (let x = 0; x <= w; x += 100) ctx.lineTo(x, h * 0.55 - Math.sin(x * 0.008) * 60 - 30);
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    ctx.fill();
+    // 竹林剪影（右側）
+    ctx.strokeStyle = "rgba(20,30,45,0.7)";
+    ctx.lineWidth = 6;
+    for (let i = 0; i < 5; i++) {
+      const bx = w * 0.72 + i * 34;
+      const bh = 220 + (i % 2) * 40;
+      ctx.beginPath();
+      ctx.moveTo(bx, h * 0.72);
+      ctx.lineTo(bx, h * 0.72 - bh);
+      ctx.stroke();
+    }
+    // 木屋剪影＋暖窗
+    ctx.fillStyle = "#20243a";
+    ctx.beginPath();
+    ctx.moveTo(60, h * 0.55);
+    ctx.lineTo(260, h * 0.4);
+    ctx.lineTo(460, h * 0.55);
+    ctx.lineTo(460, h * 0.75);
+    ctx.lineTo(60, h * 0.75);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ffdd8a";
+    ctx.fillRect(180, h * 0.58, 60, 90);
+    ctx.fillRect(280, h * 0.58, 60, 90);
+    // 紅燈籠
+    [140, 700, 1100].forEach((x) => {
+      ctx.fillStyle = "#c9503f";
+      ctx.beginPath();
+      ctx.ellipse(x, h * 0.62, 20, 28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.2)";
+      ctx.stroke();
+    });
+    // 溫泉水面
+    ctx.fillStyle = "#3a5a72";
+    ctx.fillRect(0, h * 0.82, w, h * 0.18);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  const THEME_DEFS = {
+    underwater: { texture: underwaterTexture, bg: 0x0d4f73, fog: 0x0d4f73, floor: 0xd8c48a },
+    beach: { texture: beachTexture, bg: 0xbfe6f2, fog: 0xd8f0ee, floor: 0xe8d9a8 },
+    snow: { texture: snowTexture, bg: 0x1c2b4a, fog: 0x1c2b4a, floor: 0xe8eef5 },
+    onsen: { texture: onsenTexture, bg: 0x1c2440, fog: 0x1c2440, floor: 0x3a5a72 },
+  };
+
+  const backdropMat = new THREE.MeshBasicMaterial({ map: THEME_DEFS.underwater.texture(), fog: false, side: THREE.DoubleSide });
+  function makeBackdrop(x, z, w, h) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), backdropMat);
+    mesh.position.set(x, h / 2 - 1.2, z);
+    mesh.lookAt(0, mesh.position.y, 0);
+    return mesh;
+  }
+  const backWall = makeBackdrop(0, 15, 34, 16);
+  const leftWall = makeBackdrop(15, 0, 34, 16);
+  const rightWall = makeBackdrop(-15, 0, 34, 16);
+  scene.add(backWall, leftWall, rightWall);
+
+  // ---- 動態場景物件（魚、氣泡、海草／海浪、泡沫、螃蟹）----
+  const themeObjects = new THREE.Group();
+  scene.add(themeObjects);
+  let themeAnimators = []; // 每個主題自己的每幀更新函式，animate()迴圈裡會呼叫
+
+  function clearThemeObjects() {
+    while (themeObjects.children.length) {
+      const obj = themeObjects.children.pop();
+      themeObjects.remove(obj);
+    }
+    themeAnimators = [];
+  }
+
+  function makeFish(color, size) {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 10), bodyMat);
+    body.scale.set(1.4, 0.9, 0.6);
+    g.add(body);
+    const tailShape = new THREE.Shape();
+    tailShape.moveTo(0, 0.5 * size);
+    tailShape.lineTo(-0.9 * size, 0);
+    tailShape.lineTo(0, -0.5 * size);
+    tailShape.closePath();
+    const tail = new THREE.Mesh(new THREE.ShapeGeometry(tailShape), bodyMat);
+    tail.position.x = -1.25 * size;
+    g.add(tail);
+    g.userData.tailMesh = tail;
+    return g;
+  }
+
+  function buildUnderwaterScene() {
+    // 氣泡：一群小球從海底往上飄，飄到頂端就重置到底部
+    const bubbleMat = new THREE.MeshStandardMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.55, roughness: 0.1 });
+    const bubbles = [];
+    for (let i = 0; i < 18; i++) {
+      const s = 0.05 + Math.random() * 0.08;
+      const bubble = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 8), bubbleMat);
+      const baseX = (Math.random() - 0.5) * 24;
+      const baseZ = 6 + Math.random() * 8;
+      bubble.position.set(baseX, Math.random() * 10, baseZ);
+      bubble.userData = { baseX, speed: 0.4 + Math.random() * 0.5, wobble: Math.random() * 10 };
+      themeObjects.add(bubble);
+      bubbles.push(bubble);
+    }
+
+    // 海草：一叢一叢立在後方，隨時間左右擺動
+    const weedMat = new THREE.MeshStandardMaterial({ color: 0x2f8f5f, roughness: 0.8, side: THREE.DoubleSide });
+    const weedGroups = [];
+    const weedSpots = [[-5.4, 2.6], [-2.6, 5.0], [2.6, 4.8], [5.4, 2.5], [-5.6, 0.8], [5.6, 1.0]];
+    weedSpots.forEach(([x, z], gi) => {
+      for (let i = 0; i < 3; i++) {
+        const h = 1.4 + Math.random() * 1.0;
+        const geo = new THREE.PlaneGeometry(0.3, h);
+        geo.translate(0, h / 2, 0); // 讓旋轉軸心在底部
+        const blade = new THREE.Mesh(geo, weedMat);
+        blade.position.set(x + (Math.random() - 0.5) * 0.6, 0.05, z + (Math.random() - 0.5) * 0.6);
+        blade.userData = { phase: Math.random() * 10, speed: 0.6 + Math.random() * 0.3 };
+        themeObjects.add(blade);
+        weedGroups.push(blade);
+      }
+    });
+
+    // 岩石：地板上放幾顆圓潤的岩石
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b7d7a, roughness: 0.9 });
+    [[-6.0, 3.0, 0.7], [6.0, 2.8, 0.55], [-4.2, 5.2, 0.4], [4.5, 4.9, 0.45]].forEach(([x, z, s]) => {
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
+      rock.position.set(x, s * 0.5, z);
+      rock.rotation.set(Math.random(), Math.random(), Math.random());
+      themeObjects.add(rock);
+    });
+
+    // 魚：幾隻小魚沿著弧線游動
+    const fishColors = [0xf2924a, 0xf7c948, 0x5aa9e6];
+    const fish = fishColors.map((c, i) => {
+      const f = makeFish(c, 0.28 + i * 0.03);
+      f.userData = { radius: 5 + i * 2.2, speed: 0.35 + i * 0.12, phase: i * 2.1, height: 2 + i * 0.8 };
+      themeObjects.add(f);
+      return f;
+    });
+
+    themeAnimators.push((t) => {
+      bubbles.forEach((b) => {
+        b.position.y += b.userData.speed * 0.02;
+        b.position.x = b.userData.baseX + Math.sin(t * 0.8 + b.userData.wobble) * 0.3;
+        if (b.position.y > 10) b.position.y = 0;
+      });
+      weedGroups.forEach((w) => {
+        w.rotation.z = Math.sin(t * w.userData.speed + w.userData.phase) * 0.22;
+      });
+      fish.forEach((f) => {
+        const { radius, speed, phase, height } = f.userData;
+        const angle = t * speed + phase;
+        f.position.set(Math.sin(angle) * radius, height + Math.sin(t * 1.5 + phase) * 0.15, 6 + Math.cos(angle) * (radius * 0.4));
+        f.rotation.y = -angle - Math.PI / 2;
+        if (f.userData.tailMesh) f.userData.tailMesh.rotation.y = Math.sin(t * 6 + phase) * 0.5;
+      });
+    });
+  }
+
+  function makeCrab(size) {
+    const g = new THREE.Group();
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9694f, roughness: 0.6 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(size, 14, 10), shellMat);
+    body.scale.set(1, 0.6, 0.8);
+    body.position.y = size * 0.55;
+    g.add(body);
+    for (const side of [-1, 1]) {
+      const eyeStalk = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.05, size * 0.05, size * 0.4, 6), shellMat);
+      eyeStalk.position.set(side * size * 0.3, size * 0.9, size * 0.4);
+      g.add(eyeStalk);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(size * 0.1, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2a2a2a }));
+      eye.position.set(side * size * 0.3, size * 1.1, size * 0.4);
+      g.add(eye);
+      const claw = new THREE.Mesh(new THREE.SphereGeometry(size * 0.22, 10, 8), shellMat);
+      claw.position.set(side * size * 0.9, size * 0.4, size * 0.5);
+      g.add(claw);
+    }
+    return g;
+  }
+
+  function buildBeachScene() {
+    // 海浪：一片會即時上下起伏的平面，模擬海浪
+    const waveGeo = new THREE.PlaneGeometry(30, 5, 40, 6);
+    const waveMat = new THREE.MeshStandardMaterial({ color: 0x2f8fc0, roughness: 0.5, transparent: true, opacity: 0.9 });
+    const wave = new THREE.Mesh(waveGeo, waveMat);
+    wave.rotation.x = -Math.PI / 2;
+    wave.position.set(0, 0.05, 7.4);
+    themeObjects.add(wave);
+    const wavePos = waveGeo.attributes.position;
+    const waveBase = [];
+    for (let i = 0; i < wavePos.count; i++) waveBase.push(wavePos.getZ(i));
+
+    // 浪花泡沫：沿著海浪前緣的一排白點，透明度隨時間閃動模擬沖刷
+    const foamMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+    const foamDots = [];
+    for (let i = 0; i < 22; i++) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.12 + Math.random() * 0.08, 8, 8), foamMat.clone());
+      dot.position.set((i - 11) * 1.1, 0.08, 5.9 + Math.random() * 0.5);
+      dot.userData = { phase: Math.random() * 10 };
+      themeObjects.add(dot);
+      foamDots.push(dot);
+    }
+
+    // 螃蟹：在沙灘上左右橫著爬
+    const crabs = [0, 1].map((i) => {
+      const c = makeCrab(0.35);
+      c.position.set(i === 0 ? -3.5 : 3.0, 0, 5.6 + i * 0.6);
+      c.userData = { baseX: c.position.x, range: 1.4 + i * 0.4, speed: 0.5 + i * 0.2 };
+      themeObjects.add(c);
+      return c;
+    });
+
+    themeAnimators.push((t) => {
+      for (let i = 0; i < wavePos.count; i++) {
+        const x = wavePos.getX(i);
+        wavePos.setZ(i, waveBase[i] + Math.sin(t * 1.2 + x * 0.5) * 0.18);
+      }
+      wavePos.needsUpdate = true;
+      waveGeo.computeVertexNormals();
+
+      foamDots.forEach((d) => {
+        d.material.opacity = 0.3 + Math.abs(Math.sin(t * 1.2 + d.userData.phase)) * 0.6;
+        d.position.z = 5.9 + Math.sin(t * 1.2 + d.userData.phase) * 0.5;
+      });
+
+      crabs.forEach((c) => {
+        const { baseX, range, speed } = c.userData;
+        c.position.x = baseX + Math.sin(t * speed) * range;
+        c.rotation.y = Math.cos(t * speed) > 0 ? Math.PI / 2 : -Math.PI / 2;
+      });
+    });
+  }
+
+  // ---- 柔光光暈貼片（給路燈／燈籠用，模擬暖光暈開的感覺）
+  function glowSprite(color, size) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(size, size, 1);
+    return sprite;
+  }
+
+  function buildSnowScene() {
+    // 路燈：立在桌子附近，燈泡處加柔光光暈
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3d, roughness: 0.6 });
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe6b0 });
+    [[-5.6, 2.0], [5.6, 2.0]].forEach(([x, z]) => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 8), poleMat);
+      pole.position.set(x, 1.1, z);
+      themeObjects.add(pole);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), bulbMat);
+      bulb.position.set(x, 2.25, z);
+      themeObjects.add(bulb);
+      const glow = glowSprite("rgba(255,225,170,0.9)", 1.6);
+      glow.position.set(x, 2.25, z);
+      themeObjects.add(glow);
+    });
+
+    // 飄雪：一群小片雪花持續往下飄，落到底部就重新回到頂端
+    const flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    const flakes = [];
+    for (let i = 0; i < 60; i++) {
+      const s = 0.03 + Math.random() * 0.05;
+      const flake = new THREE.Mesh(new THREE.SphereGeometry(s, 6, 6), flakeMat);
+      const baseX = (Math.random() - 0.5) * 16;
+      const baseZ = (Math.random() - 0.5) * 12;
+      flake.position.set(baseX, Math.random() * 8, baseZ);
+      flake.userData = { baseX, speed: 0.5 + Math.random() * 0.6, wobble: Math.random() * 10 };
+      themeObjects.add(flake);
+      flakes.push(flake);
+    }
+
+    themeAnimators.push((t) => {
+      flakes.forEach((f) => {
+        f.position.y -= f.userData.speed * 0.02;
+        f.position.x = f.userData.baseX + Math.sin(t * 0.6 + f.userData.wobble) * 0.4;
+        if (f.position.y < 0) f.position.y = 8;
+      });
+    });
+  }
+
+  function buildOnsenScene() {
+    // 燈籠：立在桌子周邊，一樣加柔光光暈，並帶點呼吸閃爍感
+    const lanternMat = new THREE.MeshStandardMaterial({ color: 0xc9503f, roughness: 0.6 });
+    const lanterns = [];
+    [[-5.6, 2.2], [5.6, 2.2], [0, -5.6]].forEach(([x, z]) => {
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), lanternMat);
+      body.scale.set(0.8, 1.1, 0.8);
+      body.position.set(x, 1.3, z);
+      themeObjects.add(body);
+      const glow = glowSprite("rgba(255,180,120,0.85)", 1.4);
+      glow.position.set(x, 1.3, z);
+      themeObjects.add(glow);
+      lanterns.push({ glow, phase: Math.random() * 10 });
+    });
+
+    // 蒸氣：一叢一叢半透明的柔軟形狀，從桌邊緩緩往上飄並淡出，模擬溫泉熱氣
+    const steamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 });
+    const steams = [];
+    const steamSpots = [[-5.0, 3.5], [5.0, 3.5], [-4.0, -4.5], [4.0, -4.5]];
+    steamSpots.forEach(([x, z]) => {
+      for (let i = 0; i < 3; i++) {
+        const wisp = new THREE.Mesh(new THREE.SphereGeometry(0.35 + Math.random() * 0.2, 8, 8), steamMat.clone());
+        wisp.scale.set(1, 1.6, 1);
+        wisp.position.set(x + (Math.random() - 0.5) * 0.6, Math.random() * 1.5, z + (Math.random() - 0.5) * 0.6);
+        wisp.userData = { baseX: wisp.position.x, baseZ: wisp.position.z, speed: 0.25 + Math.random() * 0.2, phase: Math.random() * 10 };
+        themeObjects.add(wisp);
+        steams.push(wisp);
+      }
+    });
+
+    themeAnimators.push((t) => {
+      lanterns.forEach((l) => {
+        l.glow.material.opacity = 0.65 + Math.sin(t * 1.5 + l.phase) * 0.25;
+      });
+      steams.forEach((s) => {
+        s.position.y += s.userData.speed * 0.02;
+        s.position.x = s.userData.baseX + Math.sin(t * 0.7 + s.userData.phase) * 0.15;
+        s.material.opacity = Math.max(0, 0.28 - (s.position.y / 2.2) * 0.28);
+        if (s.position.y > 2.2) {
+          s.position.y = 0;
+          s.material.opacity = 0.28;
+        }
+      });
+    });
+  }
+
+  function setTheme(key) {
+    const theme = THEME_DEFS[key];
+    backdropMat.map = theme.texture();
+    backdropMat.map.needsUpdate = true;
+    scene.background = new THREE.Color(theme.bg);
+    scene.fog.color = new THREE.Color(theme.fog);
+    floorMat.color = new THREE.Color(theme.floor);
+    clearThemeObjects();
+    if (key === "underwater") buildUnderwaterScene();
+    if (key === "beach") buildBeachScene();
+    if (key === "snow") buildSnowScene();
+    if (key === "onsen") buildOnsenScene();
+  }
+  setTheme("underwater");
+
+  // ---------- 座位配置（對齊方桌四邊） ----------
+  // 座位視覺位置是相對於「我自己」決定的：我永遠在前排，
+  // 下一家在右邊、對家在後面、上家在左邊（跟實際麻將座位邏輯一致）
+  const SEAT_ORDER = ["W_E", "W_S", "W_W", "W_N"];
+  const SEAT_ZH = { W_E: "東家", W_S: "南家", W_W: "西家", W_N: "北家" };
+  const SLOT_ANGLES = [Math.PI, -Math.PI / 2, 0, Math.PI / 2]; // 前／右／後／左
+  const SLOT_COLORS = [0xf4a9a8, 0xa9cdf4, 0xf4d9a9, 0xc7a9f4];
+
+  function buildSeatSlots(mySeatKey) {
+    const myIdx = SEAT_ORDER.indexOf(mySeatKey);
+    return SEAT_ORDER.map((seatKey, i) => {
+      const slot = (i - myIdx + SEAT_ORDER.length) % SEAT_ORDER.length;
+      const isMe = slot === 0;
+      return {
+        seatKey,
+        slot,
+        angle: SLOT_ANGLES[slot],
+        color: SLOT_COLORS[slot],
+        label: SEAT_ZH[seatKey] + (isMe ? "（你）" : ""),
+        isMe,
+      };
+    }).sort((a, b) => a.slot - b.slot);
+  }
+
+  const SEAT_RADIUS = FELT_SIZE / 2 + 0.9;
+  const HAND_RADIUS = FELT_SIZE / 2 + 0.55;
+
+  function seatPosition(angle, radius) {
+    return new THREE.Vector3(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ---------- Q版大頭人物佔位（角色之後會換成正式模型） ----------
+  function faceTexture(color) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    // 眼睛
+    ctx.fillStyle = "#4a3f3f";
+    ctx.beginPath(); ctx.arc(46, 58, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(82, 58, 6, 0, Math.PI * 2); ctx.fill();
+    // 腮紅
+    ctx.fillStyle = "rgba(244,169,168,0.55)";
+    ctx.beginPath(); ctx.arc(34, 74, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(94, 74, 9, 0, Math.PI * 2); ctx.fill();
+    // 微笑嘴巴
+    ctx.strokeStyle = "#4a3f3f";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(64, 66, 16, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function makePlaceholderFigure(color) {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.65 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 16), bodyMat);
+    body.scale.set(1, 0.78, 1);
+    body.position.y = 0.4;
+    body.castShadow = true;
+    g.add(body);
+
+    // Q版特色：頭比身體大很多
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffe8d6, roughness: 0.55 });
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 20), headMat);
+    head.position.y = 1.06;
+    head.castShadow = true;
+    g.add(head);
+
+    // 臉部貼在頭的前方（面向桌子中心的那一面）
+    const faceMat = new THREE.MeshBasicMaterial({ map: faceTexture(color), transparent: true });
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), faceMat);
+    face.position.set(0, 1.06, 0.47);
+    g.add(face);
+
+    return g;
+  }
+
+  function makeLabelSprite(text, highlight) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 96;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = highlight ? "rgba(232,115,92,0.95)" : "rgba(255,248,237,0.92)";
+    roundRect(ctx, 4, 4, 248, 88, 24);
+    ctx.fill();
+    ctx.fillStyle = highlight ? "#fff8ed" : "#4a3f3f";
+    ctx.font = "bold 40px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 128, 50);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.5, 0.56, 1);
+    return sprite;
+  }
+
+  // ---------- 麻將牌代號轉換（配合rules_engine.js的牌面代號） ----------
+  // 規則引擎那邊的代號："1m".."9m" "1p".."9p" "1s".."9s"　W_E/W_S/W_W/W_N　D_ZHONG/D_FA/D_BAI
+  function tileCodeToDisplay(code) {
+    const m = code.match(/^(\d)([mps])$/);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      const suit = m[2];
+      const color = suit === "m" ? "#e8735c" : suit === "s" ? "#5fa86a" : "";
+      return [suit, num, color];
+    }
+    const HONOR_MAP = {
+      W_E: "東", W_S: "南", W_W: "西", W_N: "北",
+      D_ZHONG: "中", D_FA: "發", D_BAI: "白",
+    };
+    if (HONOR_MAP[code]) {
+      const colorMap = { D_ZHONG: "#e8735c", D_FA: "#5fa86a", D_BAI: "#8f8f9a" };
+      return ["z", HONOR_MAP[code], colorMap[code] || "#3a3a50"];
+    }
+    return ["z", "?", "#3a3a50"];
+  }
+
+  // ---------- 麻將牌材質 ----------
+  const DOT_PALETTE = ["#e8735c", "#4d84c4", "#5fa86a", "#c78fd9"];
+
+  function drawDots(ctx, count) {
+    const layout = {
+      1: [[64, 88]],
+      2: [[42, 60], [86, 116]],
+      3: [[42, 50], [64, 88], [86, 126]],
+      4: [[42, 55], [86, 55], [42, 121], [86, 121]],
+      5: [[42, 55], [86, 55], [64, 88], [42, 121], [86, 121]],
+      6: [[42, 50], [86, 50], [42, 88], [86, 88], [42, 126], [86, 126]],
+      7: [[64, 45], [42, 68], [86, 68], [42, 96], [86, 96], [42, 124], [86, 124]],
+      8: [[42, 45], [86, 45], [42, 72], [86, 72], [42, 99], [86, 99], [42, 126], [86, 126]],
+      9: [[42, 45], [64, 45], [86, 45], [42, 88], [64, 88], [86, 88], [42, 131], [64, 131], [86, 131]],
+    };
+    const pts = layout[count] || layout[1];
+    pts.forEach((pt, i) => {
+      ctx.fillStyle = DOT_PALETTE[i % DOT_PALETTE.length];
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath();
+      ctx.arc(pt[0] - 3, pt[1] - 3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function tileFaceTexture(suit, num, color) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128; canvas.height = 176;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fffaf1";
+    roundRect(ctx, 4, 4, 120, 168, 16);
+    ctx.fill();
+    ctx.strokeStyle = "#e2d6c2";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    if (suit === "p") {
+      drawDots(ctx, num);
+    } else {
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.font = "bold 66px sans-serif";
+      ctx.fillText(String(num), 64, 82);
+      if (suit === "m") {
+        ctx.font = "bold 30px sans-serif";
+        ctx.fillText("萬", 64, 130);
+      } else if (suit === "s") {
+        ctx.font = "bold 30px sans-serif";
+        ctx.fillText("索", 64, 130);
+      } else {
+        // 風牌/三元牌直接用文字當num傳入
+      }
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function backTexture() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128; canvas.height = 176;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#2e7ab8";
+    roundRect(ctx, 4, 4, 120, 168, 16);
+    ctx.fill();
+    ctx.strokeStyle = "#bfe3f7";
+    ctx.lineWidth = 5;
+    roundRect(ctx, 16, 16, 96, 144, 12);
+    ctx.stroke();
+    return new THREE.CanvasTexture(canvas);
+  }
+  const backTex = backTexture();
+  const sideMat = new THREE.MeshStandardMaterial({ color: 0xfffaf1, roughness: 0.4 });
+  const backMat = new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.4 });
+
+  const TILE_W = 0.42, TILE_H = 0.58, TILE_D = 0.26;
+
+  function makeTile(suit, num, color) {
+    const faceTex = tileFaceTexture(suit, num, color);
+    const faceMat = new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.35 });
+    const materials = [sideMat, sideMat, sideMat, sideMat, faceMat, backMat];
+    const geo = new THREE.BoxGeometry(TILE_W, TILE_H, TILE_D);
+    const mesh = new THREE.Mesh(geo, materials);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  // ---------- 動態場景狀態（取代原本的demo假資料） ----------
+  let mySeatKey = null;
+  let seatSlots = []; // buildSeatSlots()的結果
+  const seatLabelSprites = {}; // seatKey -> sprite，用來標示輪到誰
+  let myHandGroup = new THREE.Group();
+  scene.add(myHandGroup);
+  const opponentHandGroups = {}; // seatKey -> group
+  let discardGroup = new THREE.Group();
+  scene.add(discardGroup);
+  let discardCount = 0;
+  const raycaster = new THREE.Raycaster();
+  const pointerVec = new THREE.Vector2();
+  let onTileClick = null; // 目前可以點擊棄牌時，設成處理函式；不能點的時候是null
+
+  /** 依照我自己的座位，重新排出四個座位的人物、名牌、對手牌背 */
+  function layoutSeats(seatKey) {
+    mySeatKey = seatKey;
+    seatSlots = buildSeatSlots(seatKey);
+
+    seatSlots.forEach((seat) => {
+      const pos = seatPosition(seat.angle, SEAT_RADIUS);
+      const dir = new THREE.Vector3(Math.sin(seat.angle), 0, Math.cos(seat.angle));
+      const lateralDir = new THREE.Vector3(dir.z, 0, -dir.x);
+
+      if (!seat.isMe) {
+        const figure = makePlaceholderFigure(seat.color);
+        figure.position.set(pos.x, 0.1, pos.z);
+        figure.lookAt(0, 0.6, 0);
+        scene.add(figure);
+
+        const label = makeLabelSprite(seat.label);
+        label.position.set(pos.x, 2.0, pos.z);
+        scene.add(label);
+        seatLabelSprites[seat.seatKey] = { sprite: label, text: seat.label, pos: label.position.clone() };
+
+        // 對手牌背：先用固定16張表示（實際張數會隨吃碰槓變化，這裡先簡化）
+        const group = new THREE.Group();
+        const p = seatPosition(seat.angle, HAND_RADIUS);
+        const count = 16;
+        for (let i = 0; i < count; i++) {
+          const tile = makeTile("z", "", "#000000");
+          const frac = (i / (count - 1)) - 0.5;
+          const lateral = frac * (TILE_W * count * 0.58);
+          tile.position.set(p.x + lateralDir.x * lateral, 0.62, p.z + lateralDir.z * lateral);
+          tile.rotation.y = seat.angle;
+          tile.rotation.x = -0.08;
+          group.add(tile);
+        }
+        scene.add(group);
+        opponentHandGroups[seat.seatKey] = group;
+      }
+    });
+  }
+
+  /** 高亮顯示目前輪到誰（對手才需要更新名牌顏色，自己不用） */
+  function highlightTurn(seatKey) {
+    Object.keys(seatLabelSprites).forEach((k) => {
+      const info = seatLabelSprites[k];
+      scene.remove(info.sprite);
+      const newSprite = makeLabelSprite(info.text, k === seatKey);
+      newSprite.position.copy(info.pos);
+      scene.add(newSprite);
+      seatLabelSprites[k].sprite = newSprite;
+    });
+  }
+
+  /** 畫出自己的手牌（依照伺服器傳來的真實牌組），並讓每張牌可以點擊棄牌 */
+  function renderMyHand(handCodes) {
+    while (myHandGroup.children.length) myHandGroup.remove(myHandGroup.children[0]);
+    const mySlot = seatSlots.find((s) => s.isMe);
+    if (!mySlot) return;
+    const dir = new THREE.Vector3(Math.sin(mySlot.angle), 0, Math.cos(mySlot.angle));
+    const lateralDir = new THREE.Vector3(dir.z, 0, -dir.x);
+    const p = seatPosition(mySlot.angle, HAND_RADIUS);
+
+    handCodes.forEach((code, i) => {
+      const [suit, num, color] = tileCodeToDisplay(code);
+      const tile = makeTile(suit, num, color);
+      tile.userData.tileCode = code;
+      const frac = (i / (handCodes.length - 1 || 1)) - 0.5;
+      const lateral = frac * (TILE_W * handCodes.length * 0.92);
+      tile.position.set(p.x + lateralDir.x * lateral, 0.62, p.z + lateralDir.z * lateral);
+      tile.rotation.y = mySlot.angle + Math.PI;
+      tile.rotation.x = -0.08;
+      myHandGroup.add(tile);
+    });
+  }
+
+  /** 有人棄牌時，在桌面中間加一張新的棄牌（簡化排列：排滿一列就往下一列） */
+  const DISCARD_COLS = 6;
+  const DISCARD_ROWS = 5; // 固定顯示最近30張棄牌，滿了就從最舊的開始覆蓋
+  const discardSlots = new Array(DISCARD_COLS * DISCARD_ROWS).fill(null);
+
+  function addDiscardTile(code) {
+    const [suit, num, color] = tileCodeToDisplay(code);
+    const tile = makeTile(suit, num, color);
+    tile.rotation.x = -Math.PI / 2;
+    tile.rotation.z = (Math.random() - 0.5) * 0.08;
+
+    const capacity = DISCARD_COLS * DISCARD_ROWS;
+    const idx = discardCount % capacity;
+    if (discardSlots[idx]) discardGroup.remove(discardSlots[idx]); // 滿了就把最舊的那張換掉
+
+    const col = idx % DISCARD_COLS;
+    const row = Math.floor(idx / DISCARD_COLS);
+    const gx = (col - (DISCARD_COLS - 1) / 2) * 0.5;
+    const gz = (row - (DISCARD_ROWS - 1) / 2) * 0.62;
+    tile.position.set(gx, 0.61, gz);
+    discardGroup.add(tile);
+    discardSlots[idx] = tile;
+    discardCount += 1;
+  }
+
+  function clearDiscards() {
+    while (discardGroup.children.length) discardGroup.remove(discardGroup.children[0]);
+    discardSlots.fill(null);
+    discardCount = 0;
+  }
+
+  // ---------- 點擊自己的牌來棄牌 ----------
+  renderer.domElement.addEventListener("click", (e) => {
+    if (!onTileClick) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointerVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerVec, camera);
+    const hits = raycaster.intersectObjects(myHandGroup.children);
+    if (hits.length > 0) {
+      const code = hits[0].object.userData.tileCode;
+      if (code) onTileClick(code);
+    }
+  });
+
+  // ---------- 相機：只有「座位視角」跟「俯視」兩種，不提供自由環繞 ----------
+  // （自由環繞會讓人有機會刻意繞到別人背後偷看手牌方向，所以不開放）
+  const target = new THREE.Vector3(0, 0.4, 0.3);
+  let zoomOffset = 0;
+  let mode = "seat";
+
+  const PRESETS = {
+    seat: { theta: Math.PI, phi: 0.98, radius: 12.8 },
+    top: { theta: Math.PI, phi: 0.2, radius: 13 },
+  };
+
+  // 直式手機畫面比較窄，兩側容易被裁掉，所以比例越窄就把鏡頭拉遠一點來補償
+  function aspectCompensation() {
+    const aspect = window.innerWidth / window.innerHeight;
+    if (aspect >= 1) return 1;
+    return Math.min(1.9, 1 / aspect);
+  }
+
+  function updateCamera() {
+    const preset = PRESETS[mode];
+    const compensated = preset.radius * aspectCompensation();
+    const radius = Math.min(compensated + 3, Math.max(compensated - 2.5, compensated + zoomOffset));
+    camera.position.x = target.x + radius * Math.sin(preset.phi) * Math.sin(preset.theta);
+    camera.position.y = target.y + radius * Math.cos(preset.phi);
+    camera.position.z = target.z + radius * Math.sin(preset.phi) * Math.cos(preset.theta);
+    camera.lookAt(target);
+  }
+
+  renderer.domElement.addEventListener("wheel", (e) => {
+    zoomOffset += e.deltaY * 0.01;
+    updateCamera();
+  }, { passive: true });
+
+  const btnTop = document.getElementById("btn-top");
+  const btnSeat = document.getElementById("btn-seat");
+
+  function setActive(btn) {
+    [btnTop, btnSeat].forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+  }
+
+  btnSeat.addEventListener("click", () => {
+    mode = "seat"; zoomOffset = 0;
+    updateCamera();
+    setActive(btnSeat);
+  });
+  btnTop.addEventListener("click", () => {
+    mode = "top"; zoomOffset = 0;
+    updateCamera();
+    setActive(btnTop);
+  });
+
+  updateCamera();
+
+  // ---------- 背景主題按鈕 ----------
+  const btnThemeUnderwater = document.getElementById("btn-theme-underwater");
+  const btnThemeBeach = document.getElementById("btn-theme-beach");
+  const btnThemeSnow = document.getElementById("btn-theme-snow");
+  const btnThemeOnsen = document.getElementById("btn-theme-onsen");
+  const allThemeBtns = [btnThemeUnderwater, btnThemeBeach, btnThemeSnow, btnThemeOnsen];
+
+  function setActiveTheme(btn) {
+    allThemeBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+  }
+
+  btnThemeUnderwater.addEventListener("click", () => { setTheme("underwater"); setActiveTheme(btnThemeUnderwater); });
+  btnThemeBeach.addEventListener("click", () => { setTheme("beach"); setActiveTheme(btnThemeBeach); });
+  btnThemeSnow.addEventListener("click", () => { setTheme("snow"); setActiveTheme(btnThemeSnow); });
+  btnThemeOnsen.addEventListener("click", () => { setTheme("onsen"); setActiveTheme(btnThemeOnsen); });
+
+  // ---------- 視窗大小調整 ----------
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    updateCamera();
+  });
+
+  // ---------- 連線與大廳邏輯 ----------
+  const el = (id) => document.getElementById(id);
+  const lobbyOverlay = el("lobby-overlay");
+  const seatPanel = el("seat-panel");
+  const seatList = el("seat-list");
+  const lobbyStatus = el("lobby-status");
+  const roomCodeText = el("room-code-text");
+  const btnStartGame = el("btn-start-game");
+  const actionPanel = el("action-panel");
+  const resultOverlay = el("result-overlay");
+  const resultCard = el("result-card");
+  const gameHud = el("game-hud");
+  const roundInfo = el("round-info");
+
+  let socket = null;
+  let currentRoomId = null;
+  let currentSeatsSummary = null;
+
+  function setStatus(msg, isError) {
+    lobbyStatus.textContent = msg || "";
+    lobbyStatus.style.color = isError ? "#b3453a" : "#3a7a4a";
+  }
+
+  function ensureSocket() {
+    if (socket) return socket;
+    const url = el("input-server-url").value.trim();
+    if (!url) {
+      setStatus("請先填伺服器網址", true);
+      return null;
+    }
+    socket = io(url, { transports: ["websocket"] });
+    wireSocketEvents();
+    return socket;
+  }
+
+  function wireSocketEvents() {
+    socket.on("connect_error", () => setStatus("連線失敗，請確認伺服器網址是否正確、伺服器是否已啟動", true));
+
+    socket.on("seats_updated", (seats) => {
+      currentSeatsSummary = seats;
+      renderSeatPanel(seats);
+    });
+
+    socket.on("round_started", (info) => {
+      clearDiscards();
+      roundInfo.textContent = `第${info.roundNumber}局・莊家：${SEAT_ZH[info.dealerSeat]}（連${info.continuousCount}）`;
+    });
+
+    socket.on("turn_changed", ({ seat }) => {
+      highlightTurn(seat);
+    });
+
+    socket.on("your_turn", (payload) => {
+      renderMyHand(payload.hand);
+      if (payload.canDeclareSelfWin) {
+        showActionPanel("自摸！要宣告胡牌嗎？", [
+          { label: "🀄 自摸胡牌", cls: "btn-yes", onClick: () => emitAck("declare_self_win") },
+          { label: "先不要", cls: "btn-no", onClick: hideActionPanel },
+        ]);
+      } else {
+        hideActionPanel();
+      }
+      onTileClick = (code) => {
+        emitAck("request_discard", { tile: code });
+      };
+    });
+
+    socket.on("tile_discarded", ({ seat, tile }) => {
+      addDiscardTile(tile);
+    });
+
+    socket.on("win_offer", ({ tile }) => {
+      onTileClick = null;
+      showActionPanel(`要胡這張「${tileLabelText(tile)}」嗎？`, [
+        { label: "🀄 胡！", cls: "btn-yes", onClick: () => emitAck("declare_win_on_discard") },
+        { label: "過水", cls: "btn-no", onClick: () => emitAck("pass_win_on_discard") },
+      ]);
+    });
+
+    socket.on("call_offer", (payload) => {
+      onTileClick = null;
+      const buttons = [];
+      if (payload.type === "peng") {
+        buttons.push({ label: "碰", cls: "btn-yes", onClick: () => emitAck("declare_peng") });
+      } else if (payload.type === "gang") {
+        buttons.push({ label: "槓", cls: "btn-yes", onClick: () => emitAck("declare_gang_from_discard") });
+      } else if (payload.type === "chi") {
+        (payload.options || []).forEach((opt) => {
+          buttons.push({
+            label: opt.map(tileLabelText).join(""),
+            cls: "btn-yes",
+            onClick: () => emitAck("declare_chi", { chiCombo: opt }),
+          });
+        });
+      }
+      buttons.push({ label: "放棄", cls: "btn-no", onClick: () => emitAck("decline_call") });
+      showActionPanel(`要${payload.type === "chi" ? "吃" : payload.type === "peng" ? "碰" : "槓"}這張「${tileLabelText(payload.tile)}」嗎？`, buttons);
+    });
+
+    socket.on("round_ended", (result) => {
+      hideActionPanel();
+      onTileClick = null;
+      showResult(result);
+    });
+  }
+
+  function tileLabelText(code) {
+    const [suit, num] = tileCodeToDisplay(code);
+    if (suit === "z") return num;
+    return num + (suit === "m" ? "萬" : suit === "p" ? "筒" : "索");
+  }
+
+  function emitAck(event, payload) {
+    socket.emit(event, payload || {}, (res) => {
+      if (res && res.ok === false) setStatus(res.error || "操作失敗", true);
+    });
+  }
+
+  function showActionPanel(title, buttons) {
+    actionPanel.innerHTML = "";
+    const t = document.createElement("div");
+    t.className = "action-title";
+    t.textContent = title;
+    actionPanel.appendChild(t);
+    const row = document.createElement("div");
+    row.className = "action-buttons";
+    buttons.forEach((b) => {
+      const btn = document.createElement("button");
+      btn.className = b.cls;
+      btn.textContent = b.label;
+      btn.onclick = () => { hideActionPanel(); b.onClick(); };
+      row.appendChild(btn);
+    });
+    actionPanel.appendChild(row);
+    actionPanel.style.display = "flex";
+  }
+  function hideActionPanel() {
+    actionPanel.style.display = "none";
+  }
+
+  function showResult(result) {
+    let text;
+    if (result.outcome === "draw") {
+      text = "🀫 流局，沒有人胡牌";
+    } else {
+      const winnerLabel = SEAT_ZH[result.winnerSeat] + (result.winnerSeat === mySeatKey ? "（你）" : "");
+      text = `${result.isSelfDraw ? "自摸" : "胡牌"}！贏家：${winnerLabel}<br/>台數：<b>${result.tai}</b> 台<br/><small>${(result.detail || []).join("、")}</small>`;
+    }
+    resultCard.innerHTML = `
+      <h2>本局結束</h2>
+      <p>${text}</p>
+      <p style="font-size:12px;opacity:0.7;">下一局莊家：${SEAT_ZH[result.dealerAfter]}（連${result.continuousAfter}）</p>
+      <button class="btn-primary" id="btn-next-round">開始下一局</button>
+    `;
+    resultOverlay.style.display = "flex";
+    el("btn-next-round").onclick = () => {
+      resultOverlay.style.display = "none";
+      emitAck("next_round");
+    };
+  }
+
+  function renderSeatPanel(seats) {
+    seatPanel.style.display = "block";
+    seatList.innerHTML = "";
+    SEAT_ORDER.forEach((key) => {
+      const info = seats[key];
+      const row = document.createElement("div");
+      row.className = "seat-row";
+      const label = document.createElement("span");
+      label.textContent = `${SEAT_ZH[key]}：${info ? (info.type === "ai" ? "🤖 " + info.name : "🙋 " + info.name) : "（空位）"}`;
+      row.appendChild(label);
+      if (!info) {
+        const btnAI = document.createElement("button");
+        btnAI.textContent = "加入AI";
+        btnAI.onclick = () => emitAck("add_ai", { roomId: currentRoomId, seat: key });
+        row.appendChild(btnAI);
+      }
+      seatList.appendChild(row);
+    });
+    const filled = SEAT_ORDER.every((k) => seats[k]);
+    btnStartGame.disabled = !filled;
+  }
+
+  // ---------- 大廳按鈕事件 ----------
+  let myLocalSeat = null;
+
+  el("btn-create-room").addEventListener("click", () => {
+    const s = ensureSocket();
+    if (!s) return;
+    const name = el("input-name").value.trim() || "玩家";
+    s.emit("create_room", { name }, (res) => {
+      if (!res.ok) return setStatus(res.error || "建立房間失敗", true);
+      currentRoomId = res.roomId;
+      myLocalSeat = res.seat;
+      roomCodeText.textContent = res.roomId;
+      setStatus("房間建立成功！可以把代碼分享給朋友，或直接加AI開始遊戲");
+    });
+  });
+
+  el("btn-join-room").addEventListener("click", () => {
+    const s = ensureSocket();
+    if (!s) return;
+    const name = el("input-name").value.trim() || "玩家";
+    const roomId = el("input-room-code").value.trim().toUpperCase();
+    if (!roomId) return setStatus("請輸入房間代碼", true);
+    // 找空位自動加入（依序嘗試東南西北）
+    tryJoinNextSeat(roomId, name, 0);
+  });
+
+  function tryJoinNextSeat(roomId, name, idx) {
+    if (idx >= SEAT_ORDER.length) return setStatus("這個房間已經滿了", true);
+    socket.emit("join_room", { roomId, seat: SEAT_ORDER[idx], name }, (res) => {
+      if (res.ok) {
+        currentRoomId = roomId;
+        myLocalSeat = res.seat;
+        roomCodeText.textContent = roomId;
+        setStatus("加入成功！");
+      } else {
+        tryJoinNextSeat(roomId, name, idx + 1);
+      }
+    });
+  }
+
+  btnStartGame.addEventListener("click", () => {
+    // 先把座位排好，伺服器才不會在座位還沒排好時就把手牌事件送過來
+    layoutSeats(myLocalSeat);
+    socket.emit("start_game", { roomId: currentRoomId }, (res) => {
+      if (!res.ok) return setStatus(res.error || "開始遊戲失敗", true);
+      lobbyOverlay.style.display = "none";
+      gameHud.style.display = "flex";
+    });
+  });
+
+  el("btn-load-game").addEventListener("click", () => {
+    const s = ensureSocket();
+    if (!s) return;
+    const name = el("input-name").value.trim() || "玩家";
+    const roomId = el("input-load-room-code").value.trim().toUpperCase();
+    if (!roomId) return setStatus("請輸入要讀取的房間代碼", true);
+    s.emit("load_game", { roomId, name }, (res) => {
+      if (!res.ok) return setStatus(res.error || "讀取失敗", true);
+      currentRoomId = res.roomId;
+      layoutSeats(res.seat);
+      lobbyOverlay.style.display = "none";
+      gameHud.style.display = "flex";
+      if (res.resumeEvent === "turnStarted") {
+        renderMyHand(res.resumePayload.hand);
+      } else if (res.resumeEvent === "roundEnded") {
+        showResult(res.resumePayload);
+      }
+      setStatus("讀取成功，已回到遊戲中");
+    });
+  });
+
+  el("btn-save-game").addEventListener("click", () => {
+    emitAck("save_game", null);
+    const original = el("btn-save-game").textContent;
+    el("btn-save-game").textContent = "已存檔 ✓";
+    setTimeout(() => { el("btn-save-game").textContent = original; }, 1500);
+  });
+
+
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    themeAnimators.forEach((fn) => fn(t));
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

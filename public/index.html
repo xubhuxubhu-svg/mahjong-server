@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d3b24">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>台灣十六張麻將</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- 大廳 -->
+  <section id="lobby" class="screen">
+    <button class="lobby-music" id="lobbyMusic">音樂：開</button>
+    <div class="panel lobby-panel">
+      <div class="logo">
+        <img src="img/MJd1.gif" alt=""><img src="img/MJd2.gif" alt=""><img src="img/MJd3.gif" alt="">
+      </div>
+      <h1>台灣十六張麻將</h1>
+      <p class="sub">手機、電腦同桌連線對戰</p>
+      <label class="field">暱稱
+        <input id="nameInput" maxlength="10" placeholder="輸入你的暱稱">
+      </label>
+      <button class="char-btn" id="charBtn"></button>
+      <button class="btn big gold" id="soloBtn">單人模式（對 1～3 位電腦）</button>
+      <button class="btn big adv-btn" id="advBtn">冒險模式</button>
+      <div class="row2"><button class="btn meta-btn" id="metaBtn">天賦與裝備</button><button class="btn cloud-btn" id="cloudBtn">存檔／讀取進度</button></div>
+      <div class="online-only">
+        <button class="btn big" id="createBtn">建立對戰房間（雙人、三人、四人）</button>
+        <div class="join-row">
+          <input id="codeInput" inputmode="numeric" maxlength="4" placeholder="房號四碼">
+          <button class="btn" id="joinBtn">加入房間</button>
+        </div>
+      </div>
+      <p class="offline-note hidden" id="offlineNote">目前沒有連上伺服器：對戰模式要用連線版網址才能玩。</p>
+      <details class="rules">
+        <summary>牌局設定</summary>
+        <div class="set-grid">
+          <span>圈數</span>
+          <select id="setRounds"><option value="1">東風圈（1圈）</option><option value="2">東南風（2圈）</option><option value="4">一將（4圈）</option></select>
+          <span>底／台</span>
+          <select id="setBase"><option value="300-100">300 底 100 台</option><option value="100-20">100 底 20 台</option><option value="500-100">500 底 100 台</option><option value="100-50">100 底 50 台</option></select>
+          <span>出牌時間</span>
+          <select id="setTime"><option value="20">20 秒</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="0">不限時</option></select>
+          <span>相公模式</span>
+          <select id="setXiang"><option value="0">關閉（能胡會自動提示）</option><option value="1">開啟（自己看，胡錯就相公）</option></select>
+          <span>過水</span>
+          <select id="setGuo"><option value="strict">嚴格（到自己摸牌前都不能胡）</option><option value="loose">寬鬆（只限同一張牌）</option></select>
+          <span>抓馬</span>
+          <select id="setHorse"><option value="0">不抓馬</option><option value="2">抓 2 張</option><option value="4">抓 4 張</option><option value="6">抓 6 張</option></select>
+          <span>初始金額</span>
+          <select id="setStart"><option value="0">0</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="20000">20,000</option><option value="30000">30,000</option><option value="50000">50,000</option></select>
+          <span>牌背</span>
+          <select id="setBack"><option value="classic">經典綠</option><option value="red">喜氣紅</option><option value="star">星空藍</option><option value="gold">黑金</option><option value="sakura">櫻花粉</option><option value="bamboo">青竹</option></select>
+          <span>桌巾</span>
+          <select id="setCloth"><option value="classic">經典綠絨布</option><option value="shiny">反光綠絨布</option><option value="banquet">夜市紅桌墊</option><option value="navy">深藍絨布</option><option value="wood">木頭桌</option><option value="purple">紫色絨布</option></select>
+          <span>技能道具</span>
+          <select id="setSkills"><option value="1">開啟</option><option value="0">關閉（正統打法）</option></select>
+          <span>電腦用技能</span>
+          <select id="setAiSkill"><option value="normal">普通</option><option value="high">強</option><option value="low">弱</option><option value="off">不用</option></select>
+          <span>瞇牌</span>
+          <select id="setMi"><option value="ting">聽牌時摸牌都瞇</option><option value="win">摸到能自摸的牌才瞇</option><option value="off">不瞇牌</option></select>
+        </div>
+        <p class="hint">單人模式一律不限時。連線房間的設定由房主決定。</p>
+      </details>
+      <details class="rules credits">
+        <summary>製作名單・素材來源</summary>
+        <div id="creditsLobby"></div>
+      </details>
+      <details class="rules">
+        <summary>玩法說明</summary>
+        <ul>
+          <li>每人 16 張，胡牌為 5 組順子或刻子加 1 對眼。花牌自動補花。</li>
+          <li>點一下手牌會浮起，再點一次就打出。</li>
+          <li>有人打牌時，可以吃、碰、槓、胡的按鈕會自動出現。吃只限上家。</li>
+          <li>胡的優先順序：胡 ＞ 碰槓 ＞ 吃。同時多家胡，以下家優先（截胡）。</li>
+          <li>放棄胡牌後，到自己摸牌前不能再胡別人的牌（過水）。</li>
+          <li>莊家胡牌或流局就連莊，每連一次加「連N拉N」。牌牆留 16 張。</li>
+          <li>報聽：選好要打的牌後按「報聽」，之後摸到的牌會自動打出。第一巡就報聽，莊家算天聽 8 台、閒家算地聽 4 台。</li>
+          <li>相公模式：不會提示你能不能胡，要自己按「胡」。胡錯就相公，這局不能再胡。</li>
+          <li>抓馬：胡牌後從牌尾翻牌，1、5、9、東、中對莊家，依序往下家數，對到胡牌者就加倍。</li>
+          <li>瞇牌：聽牌時摸牌，用手指把牌背往下推，慢慢看是什麼牌。</li>
+          <li>氣：每摸一張牌加 1 氣，最多 10 氣，用來發動技能。每個技能每局限用一次，只能在自己回合用。</li>
+          <li>搓牌（8 氣）：轉輪先選花色、再選數字，下一張就摸到那張。氣運值（4 氣）：選牌型，接下來 5 巡較容易摸到。飛彈攻擊（3～6 氣）：讓對手禁吃碰槓 3 巡、定身跳過一巡、或禁胡 1 巡。神算（3 氣）：偷看自己接下來要摸的 3 張。</li>
+          <li>局前準備：發完牌可以換 1～10 張（前 2 張免費），也可以買翻倍符（胡了輸贏加倍）、防護罩（擋一次飛彈）。花的是自己的分數。</li>
+          <li>台數包含：莊家、連莊、門清、自摸、門清自摸、圈風、門風、三元牌、花牌、花槓、平胡、獨聽、半求人、全求人、碰碰胡、三四五暗刻、混一色、清一色、字一色、小三元、大三元、小四喜、大四喜、海底撈月、河底撈魚、槓上開花、搶槓、天胡、地胡、人胡、七搶一、八仙過海。</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- 房間 -->
+  <section id="room" class="screen hidden">
+    <div class="panel room-panel">
+      <div class="room-head">
+        <div>房號</div>
+        <div class="room-code" id="roomCode">----</div>
+        <button class="btn small" id="shareBtn">複製邀請連結</button>
+      </div>
+      <div class="room-mode" id="roomMode"></div>
+      <div class="seats" id="seats"></div>
+      <div class="room-settings" id="roomSettings"></div>
+      <div class="room-actions">
+        <button class="btn big gold" id="startBtn">開始打牌</button>
+        <p class="hint" id="waitHost">等待房主開始…</p>
+        <button class="btn small ghost" id="leaveBtn">離開房間</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 養成 -->
+  <div class="meta-screen hidden" id="metaScreen"></div>
+
+  <!-- 選角 -->
+  <div class="char-pick hidden" id="charPick"></div>
+
+  <!-- 冒險模式 -->
+  <section id="adv" class="screen hidden"><div class="adv-screen" id="advScreen"></div></section>
+
+  <!-- 牌桌 -->
+  <section id="table" class="screen hidden">
+    <div class="tbl">
+      <div class="opp opp-top" id="p2"></div>
+      <div class="opp opp-left" id="p3"></div>
+      <div class="opp opp-right" id="p1"></div>
+      <div class="center">
+        <div class="river r-top" id="r2"></div>
+        <div class="river r-left" id="r3"></div>
+        <div class="river r-right" id="r1"></div>
+        <div class="river r-me" id="r0"></div>
+        <div class="info" id="info"></div>
+      </div>
+      <div class="me">
+        <div class="me-row1">
+          <div class="me-chip" id="p0"></div>
+          <div class="me-melds" id="myMelds"></div>
+          <div class="waits" id="waits"></div>
+          <div class="peek" id="peekBox"></div>
+        </div>
+        <div class="actions" id="actions"></div>
+        <div class="skillbar" id="skillbar"></div>
+        <div class="hand" id="hand"></div>
+      </div>
+      <div class="topbar">
+        <button class="icon-btn talk-btn" id="talkBtn" title="垃圾話">話</button>
+        <button class="icon-btn" id="menuBtn" title="選單">☰</button>
+      </div>
+      <div class="talk-panel hidden" id="talkPanel"></div>
+      <div class="pslot" id="ps0"></div><div class="pslot" id="ps1"></div><div class="pslot" id="ps2"></div><div class="pslot" id="ps3"></div>
+      <div class="adv-hud hidden" id="advHud"></div>
+      <div class="toast-layer" id="toasts"></div>
+    </div>
+    <div class="menu hidden" id="menu">
+      <button class="btn" id="autoBtn">託管：關</button>
+      <button class="btn" id="voiceBtn">語音：開</button>
+      <button class="btn" id="musicBtn">背景音樂：開</button>
+      <button class="btn" id="backBtn">換牌背</button>
+      <button class="btn" id="clothBtn">換桌巾</button>
+      <button class="btn" id="fsBtn">全螢幕</button>
+      <button class="btn" id="creditsBtn">製作名單</button>
+      <button class="btn ghost" id="quitBtn">離開牌桌</button>
+      <button class="btn ghost" id="closeMenu">關閉</button>
+    </div>
+    <div class="skill-pop hidden" id="skillPop"></div>
+    <div class="prep-box hidden" id="prepBox"></div>
+    <div class="cuo hidden" id="cuoBox"></div>
+    <div class="overlay hidden" id="result"></div>
+    <div class="rotate-tip hidden" id="rotateTip">手機橫放可以看得更清楚 <button id="rotateClose">知道了</button></div>
+  </section>
+</div>
+
+<script src="/socket.io/socket.io.js" onerror="window.NO_SOCKET=true"></script>
+<script src="audio.js"></script>
+<script src="shared/rules.js"></script>
+<script src="shared/ai.js"></script>
+<script src="shared/chars.js"></script>
+<script src="shared/cards.js"></script>
+<script src="shared/game.js"></script>
+<script src="meta.js"></script>
+<script src="client.js"></script>
+<script src="metaui.js"></script>
+<script src="cloud.js"></script>
+<script src="adventure.js"></script>
+</body>
+</html>

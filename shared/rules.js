@@ -117,7 +117,53 @@
 
   // 向聽數：n 為還需要的面子數。-1 代表已胡
   function shanten(tiles, n) { return shantenCounts(toCounts(tiles), n); }
+  // 快速版：萬、筒、條、字各自算出所有可能的（面子、搭子、雀頭）組合並記起來，再合併
+  const SUIT_MEMO = new Map();
+  function suitOptions(c, off, len, honor) {
+    let key = honor ? 'h' : 's';
+    for (let i = 0; i < len; i++) key += c[off + i];
+    let r = SUIT_MEMO.get(key);
+    if (r) return r;
+    const a = []; for (let i = 0; i < len; i++) a.push(c[off + i]);
+    const seen = new Set(); const out = [];
+    let m = 0, t = 0, h = 0;
+    function dfs(i) {
+      while (i < len && a[i] === 0) i++;
+      if (i >= len) { const k = m * 100 + t * 2 + h; if (!seen.has(k)) { seen.add(k); out.push([m, t, h]); } return; }
+      if (a[i] >= 3) { a[i] -= 3; m++; dfs(i); m--; a[i] += 3; }
+      if (!honor && i <= 6 && a[i + 1] && a[i + 2]) { a[i]--; a[i + 1]--; a[i + 2]--; m++; dfs(i); m--; a[i]++; a[i + 1]++; a[i + 2]++; }
+      if (a[i] >= 2 && !h) { a[i] -= 2; h = 1; dfs(i); h = 0; a[i] += 2; }
+      if (a[i] >= 2) { a[i] -= 2; t++; dfs(i); t--; a[i] += 2; }
+      if (!honor && i <= 7 && a[i + 1]) { a[i]--; a[i + 1]--; t++; dfs(i); t--; a[i]++; a[i + 1]++; }
+      if (!honor && i <= 6 && a[i + 2]) { a[i]--; a[i + 2]--; t++; dfs(i); t--; a[i]++; a[i + 2]++; }
+      a[i]--; dfs(i); a[i]++;
+    }
+    dfs(0);
+    // 只留下不會被別的組合完全比下去的
+    r = out.filter(x => !out.some(y => y !== x && y[0] >= x[0] && y[0] + y[1] >= x[0] + x[1] && y[2] === x[2] && (y[0] > x[0] || y[1] > x[1])));
+    if (SUIT_MEMO.size > 200000) SUIT_MEMO.clear();
+    SUIT_MEMO.set(key, r);
+    return r;
+  }
   function shantenCounts(c, n) {
+    const g = [suitOptions(c, 0, 9, false), suitOptions(c, 9, 9, false), suitOptions(c, 18, 9, false), suitOptions(c, 27, 7, true)];
+    let best = 2 * n;
+    for (const A of g[0]) for (const B of g[1]) {
+      const h2 = A[2] + B[2]; if (h2 > 1) continue;
+      for (const C of g[2]) {
+        const h3 = h2 + C[2]; if (h3 > 1) continue;
+        for (const D of g[3]) {
+          const h = h3 + D[2]; if (h > 1) continue;
+          const m = Math.min(n, A[0] + B[0] + C[0] + D[0]);
+          const t = Math.min(A[1] + B[1] + C[1] + D[1], n - m);
+          const s = 2 * n - 2 * m - t - h;
+          if (s < best) best = s;
+        }
+      }
+    }
+    return best;
+  }
+  function shantenCountsSlow(c, n) {
     let best = 2 * n;
     let m = 0, t = 0, head = 0;
     function dfs(i) {
@@ -269,7 +315,7 @@
 
   return {
     tileName, tileImg, isSuit, isHonor, isFlower, makeWall, toCounts, sortTiles,
-    isWin, isWinCounts, waits, decompositions, shanten, shantenCounts, score, flowerItems,
+    isWin, isWinCounts, waits, decompositions, shanten, shantenCounts, shantenCountsSlow, score, flowerItems,
     WIND, FLOWER,
   };
 });

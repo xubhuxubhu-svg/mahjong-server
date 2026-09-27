@@ -12,6 +12,9 @@
     for (let k = 0; k < 34; k++) {
       const left = 4 - visible[k];
       if (left <= 0) continue;
+      // 跟手牌完全沾不上邊的牌（同花色前後兩張內都沒有、或沒拿著的字牌）摸到也不會變好，直接略過
+      if (k >= 27) { if (!c[k]) continue; }
+      else { const lo = k - (k % 9), hi = lo + 8; let near = false; for (let j = Math.max(lo, k - 2); j <= Math.min(hi, k + 2); j++) if (c[j]) { near = true; break; } if (!near) continue; }
       c[k]++;
       const s = R.shantenCounts(c, n);
       c[k]--;

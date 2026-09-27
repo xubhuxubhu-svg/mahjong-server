@@ -143,6 +143,7 @@
   // ---------- 畫面切換 ----------
   function show(id) {
     for (const s of ['lobby', 'room', 'table', 'adv']) $(s).classList.toggle('hidden', s !== id);
+    if (id !== 'table' && $('fxLayer')) $('fxLayer').innerHTML = '';
     if (id === 'adv' && mode !== 'adv') mode = 'advmap';
     if (id === 'lobby') { if (mode === 'advmap') mode = null; refreshAdvBtn(); }
     if ($('advHud')) $('advHud').classList.toggle('hidden', !(id === 'table' && mode === 'adv'));
@@ -782,6 +783,7 @@
       const chip = (r === 0 ? $('p0') : $('p' + r)).querySelector('.chip');
       if (!chip) continue;
       const src = charImg(p.char);
+      preloadAnim(p.char);
       if (slot.dataset.src !== src) { slot.innerHTML = `<img src="${src}" alt="">`; slot.dataset.src = src; }
       slot.style.display = 'block';
       slot.classList.toggle('awake', !!p.awake);
@@ -1407,15 +1409,207 @@
     speak(c.text, 1.15, [1.0, 0.8, 1.35, 0.95][rel(c.seat)]);
   }
 
+  // ---------- 人物特效動畫（被動、專屬技能、怒氣覺醒） ----------
+  // 資料在 fxdata.js：slot＝在人物立繪位置播去背動畫；over＝疊在立繪上；center＝覺醒時在牌桌中央放大播；
+  // circle＝實景影片放進圓形窗；panel＝覺醒實景影片放大面板
+  const FXD = window.MJFX || {};
+  let fxMode = store.get('mj16_fx') || 'on'; // on 開、mute 動畫但不出聲、off 關
+  const fxBlob = {};
+  const KIND_NAME = { passive: '被動', skill: '專屬技能', awaken: '怒氣覺醒' };
+  function fxGet(src) {
+    if (!fxBlob[src]) fxBlob[src] = fetch(src).then(r => r.ok ? r.blob() : null).catch(() => null);
+    return fxBlob[src];
+  }
+  function preloadAnim(ch) { // 牌桌上有這個人物就先把去背動畫抓好
+    const d = FXD[ch]; if (!d || fxMode === 'off') return;
+    for (const k in d) if (d[k].img) fxGet(d[k].img);
+  }
+  function fxLayer() {
+    let l = $('fxLayer');
+    if (!l) { l = document.createElement('div'); l.id = 'fxLayer'; l.className = 'fx-layer'; $('table').appendChild(l); }
+    return l;
+  }
+  function fxSound(src, seat) {
+    if (fxMode !== 'on' || !src) return null;
+    try {
+      const a = new Audio(src);
+      a.volume = seat === view.seat ? 0.9 : 0.6;
+      const pr = a.play(); if (pr && pr.catch) pr.catch(() => { });
+      return a;
+    } catch (e) { return null; }
+  }
+  function fxDuck(ms) {
+    if (!window.MJAudio) return;
+    MJAudio.bgm.duck(true);
+    clearTimeout(fxDuck._t); fxDuck._t = setTimeout(() => MJAudio.bgm.duck(false), ms);
+  }
+  function hop(seat) {
+    const slot = $('ps' + rel(seat)); if (!slot) return;
+    slot.classList.remove('cast'); void slot.offsetWidth; slot.classList.add('cast');
+    setTimeout(() => slot.classList.remove('cast'), 1000);
+  }
+  function slotRect(seat) {
+    const tb = $('table').getBoundingClientRect();
+    const slot = $('ps' + rel(seat));
+    let r = slot && slot.style.display !== 'none' ? slot.getBoundingClientRect() : null;
+    if (!r || !r.width) { const pe = $(rel(seat) === 0 ? 'p0' : 'p' + rel(seat)); r = pe ? pe.getBoundingClientRect() : { left: tb.left + tb.width / 2, top: tb.bottom - 80, width: 0, height: 0 }; }
+    return { x: r.left - tb.left, y: r.top - tb.top, w: r.width, h: r.height, tw: tb.width, th: tb.height };
+  }
+  // 在人物立繪位置播去背動畫（播完換回原圖）
+  function fxSlot(seat, e) {
+    const p = view.players[seat]; const slot = $('ps' + rel(seat)); if (!slot) return;
+    hop(seat);
+    fxGet(e.img).then((b) => {
+      const img = slot.querySelector('img'); if (!img) return;
+      const url = b ? URL.createObjectURL(b) : e.img + '?t=' + Date.now(); // 每次用新網址，動畫才會從頭播
+      img.src = url; slot.style.setProperty('--fxs', e.scale || 1.12); slot.classList.add('anim');
+      fxSound(e.snd, seat); fxDuck(e.ms);
+      clearTimeout(slot._animT);
+      slot._animT = setTimeout(() => {
+        const im = slot.querySelector('img'); if (im && im.src === url) im.src = charImg(p.char);
+        slot.classList.remove('anim'); if (b) URL.revokeObjectURL(url);
+      }, e.ms);
+    });
+  }
+  // 疊在立繪上方播（例如草莓從天上掉下來）
+  function fxOver(seat, e) {
+    hop(seat);
+    const r = slotRect(seat);
+    fxGet(e.img).then((b) => {
+      const d = document.createElement('div'); d.className = 'fx-over';
+      const S = Math.max(r.w, r.h) * 1.5;
+      Object.assign(d.style, { left: (r.x + r.w / 2 - S / 2) + 'px', top: (r.y + r.h / 2 - S / 2) + 'px', width: S + 'px', height: S + 'px' });
+      const url = b ? URL.createObjectURL(b) : e.img + '?t=' + Date.now();
+      d.innerHTML = `<img src="${url}" alt="">`;
+      fxLayer().appendChild(d);
+      fxSound(e.snd, seat); fxDuck(e.ms);
+      setTimeout(() => { d.classList.add('out'); setTimeout(() => { d.remove(); if (b) URL.revokeObjectURL(url); }, 400); }, e.ms);
+    });
+  }
+  // 程式畫的金色防護罩（阿星「皮厚」）
+  function fxShield(seat, e) {
+    hop(seat);
+    const r = slotRect(seat);
+    const S = Math.max(r.w, r.h) * 1.25;
+    const d = document.createElement('div'); d.className = 'fx-shield';
+    Object.assign(d.style, { left: (r.x + r.w / 2 - S / 2) + 'px', top: (r.y + r.h / 2 - S / 2) + 'px', width: S + 'px', height: S + 'px' });
+    d.innerHTML = '<i class="sb"></i><i class="sr"></i><i class="sr r2"></i><i class="sp"></i>';
+    fxLayer().appendChild(d);
+    fxSound(e.snd, seat); fxDuck(e.ms);
+    setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 450); }, e.ms);
+  }
+  // 大場面一次只放一個，排隊播
+  const fxQ = []; let fxBusy = false;
+  function fxEnqueue(item) {
+    if (item.kind === 'passive' && fxQ.length >= 2) return; // 被動太多就略過，不要洗畫面
+    fxQ.push(item); fxRun();
+  }
+  function fxRun() {
+    if (fxBusy || !fxQ.length) return;
+    if (!view || $('table').classList.contains('hidden')) { fxQ.length = 0; return; }
+    if (view.stage === 'prep' || document.querySelector('.prep-box:not(.hidden)')) { setTimeout(fxRun, 700); return; }
+    fxBusy = true;
+    const it = fxQ.shift();
+    const done = () => { fxBusy = false; setTimeout(fxRun, 250); };
+    try { (it.e.t === 'circle' ? fxCircle : fxStage)(it, done); } catch (err) { done(); }
+  }
+  function fxVideo(e, seat) {
+    const v = document.createElement('video');
+    v.src = e.vid; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+    v.muted = fxMode !== 'on';
+    v.volume = seat === view.seat ? 0.9 : 0.6;
+    const go = () => { const pr = v.play(); if (pr && pr.catch) pr.catch(() => { v.muted = true; v.play().catch(() => { }); }); };
+    go();
+    return v;
+  }
+  function fxSfx(e) { (e.sfx || []).forEach(([k, ms]) => setTimeout(() => playSound(k), ms)); }
+  // 圓形窗：放在發動者（或被指定的人）和牌桌中央之間
+  function fxCircle(it, done) {
+    const { seat, e, title } = it;
+    const at = it.at != null ? it.at : seat;
+    const r = slotRect(at);
+    const D = Math.round(Math.min(r.th * 0.46, r.tw * 0.36, 330));
+    const sx = r.x + r.w / 2, sy = r.y + r.h / 2, cx = r.tw / 2, cy = r.th * 0.45;
+    let x = sx + (cx - sx) * 0.5 - D / 2, y = sy + (cy - sy) * 0.5 - D / 2;
+    x = Math.max(6, Math.min(r.tw - D - 6, x)); y = Math.max(6, Math.min(r.th - D - 26, y));
+    const w = document.createElement('div'); w.className = 'fx-circle';
+    Object.assign(w.style, { left: x + 'px', top: y + 'px', width: D + 'px', height: D + 'px' });
+    const v = fxVideo(e, seat);
+    w.appendChild(v);
+    const cap = document.createElement('div'); cap.className = 'fx-cap'; cap.textContent = title; w.appendChild(cap);
+    fxLayer().appendChild(w);
+    fxSfx(e); fxDuck(e.ms + 300);
+    let ended = false;
+    const end = () => { if (ended) return; ended = true; w.classList.add('out'); setTimeout(() => { w.remove(); done(); }, 380); };
+    v.addEventListener('ended', end); setTimeout(end, e.ms + 900);
+  }
+  // 覺醒：牌桌變暗，中央放大播
+  function fxStage(it, done) {
+    const { seat, e, title } = it;
+    const w = document.createElement('div'); w.className = 'fx-stage';
+    const p = view.players[seat]; const c = CH.BY_ID[p.char];
+    w.style.setProperty('--fxc', c ? c.color : '#ffd76a');
+    w.innerHTML = `<div class="fx-banner"><small>${esc(p.name)}</small><b>${esc(title)}</b></div>`;
+    const box = document.createElement('div'); box.className = e.t === 'panel' ? 'fx-panel' + (e.round ? ' round' : '') : 'fx-center';
+    let url = null;
+    if (e.t === 'panel') box.appendChild(fxVideo(e, seat));
+    else {
+      const im = document.createElement('img'); box.appendChild(im);
+      if (e.holy) box.classList.add('holy');
+      if (e.from) { // 先出現原本的樣子，閃一下光再變身
+        const im0 = document.createElement('img'); im0.className = 'fx-from'; im0.src = e.from; box.appendChild(im0);
+        im.classList.add('fx-to');
+        setTimeout(() => { box.classList.add('morph'); }, 850);
+      }
+      if (e.shield) { box.classList.add('with-shield'); const sh = document.createElement('div'); sh.className = 'fx-shield big'; sh.innerHTML = '<i class="sb"></i><i class="sr"></i><i class="sr r2"></i><i class="sp"></i>'; box.appendChild(sh); }
+      fxGet(e.img).then((b) => { url = b ? URL.createObjectURL(b) : e.img + '?t=' + Date.now(); im.src = url; });
+      fxSound(e.snd, seat);
+    }
+    w.appendChild(box);
+    fxLayer().appendChild(w);
+    fxSfx(e); fxDuck(e.ms + 300);
+    let ended = false;
+    const end = () => { if (ended) return; ended = true; w.classList.add('out'); setTimeout(() => { w.remove(); if (url) URL.revokeObjectURL(url); done(); }, 450); };
+    const v = box.querySelector('video'); if (v) v.addEventListener('ended', end);
+    setTimeout(end, e.ms + 900);
+    w.addEventListener('click', end);
+  }
+  // 播某位玩家的被動／專屬技能／覺醒特效；沒有專屬動畫就用跳一下＋發光
+  function playFx(seat, kind, opt) {
+    const p = view && view.players[seat]; if (!p || !p.char) return false;
+    const c = CH.BY_ID[p.char];
+    const e = FXD[p.char] && FXD[p.char][kind];
+    if (!e || fxMode === 'off') { hop(seat); return false; }
+    const nm = kind === 'passive' ? c.passive.name : kind === 'skill' ? c.skill.name : c.awaken.name;
+    const title = `${c.name}・${nm}`;
+    if (e.t === 'shield') fxShield(seat, e);
+    else if (e.t === 'slot') fxSlot(seat, e);
+    else if (e.t === 'over') fxOver(seat, e);
+    else { hop(seat); fxEnqueue({ seat, kind, e, title, at: e.at === 'target' && opt && opt.target != null ? opt.target : null }); }
+    return true;
+  }
+  const FX_NAMES = { on: '開', mute: '不出聲', off: '關' };
+  function setFxMode(m) {
+    fxMode = m; store.set('mj16_fx', m);
+    if ($('setFx')) $('setFx').value = m;
+    if ($('fxBtn')) $('fxBtn').textContent = '特效動畫：' + FX_NAMES[m];
+    if (m === 'off' && $('fxLayer')) { $('fxLayer').innerHTML = ''; fxQ.length = 0; fxBusy = false; }
+  }
+  setFxMode(fxMode);
+  $('setFx').addEventListener('change', () => setFxMode($('setFx').value));
+  $('fxBtn').onclick = () => { const o = ['on', 'mute', 'off']; setFxMode(o[(o.indexOf(fxMode) + 1) % 3]); };
+  function fxHasVoice(ch, kind) { const e = FXD[ch] && FXD[ch][kind]; return !!(e && e.voice && fxMode === 'on'); }
+
   function onSkillEvent(ev) {
     if (ev.id === 'char') {
       const c = CH.BY_ID[ev.sub];
+      playFx(ev.seat, 'skill', { target: ev.target });
       const go = () => {
         toast(c.skill.name + '！', ev.target != null && !ev.blocked ? ev.target : ev.seat);
         playSound(ev.blocked ? 'bell' : 'stamp');
         if (ev.jiao) setTimeout(() => toastSmall(`擲筊結果：${ev.jiao}`, ev.seat), 600);
       };
-      speak(c.skill.name, 1.1, 1.1);
+      if (!fxHasVoice(ev.sub, 'skill')) speak(c.skill.name, 1.1, 1.1); // 影片本身有配音就不再念
       if (ev.target != null) fireMissile(ev.seat, ev.target, go, 'hex'); else go();
       return;
     }
@@ -1495,9 +1689,15 @@
       case 'altprog': toastSmall(`么九王：${ev.n}／${ev.need}`); break;
       case 'awaken': {
         const c = CH.BY_ID[ev.char];
-        toast('覺醒！', ev.seat); flash(); shake(true); playSound('thunder');
+        toast('覺醒！', ev.seat); flash(); shake(true); playSound('thunder'); playFx(ev.seat, 'awaken');
         setTimeout(() => toastSmall(`${view.players[ev.seat].name}・${c.awaken.name}：${c.awaken.desc}`, ev.seat), 700);
         speak(c.awaken.name, 1, 0.8);
+        break;
+      }
+      case 'passive': {
+        const c = CH.BY_ID[ev.char]; if (!c) break;
+        playFx(ev.seat, 'passive', { target: ev.target });
+        toastSmall(`${view.players[ev.seat].name}・${c.passive.name}：${c.passive.desc}`, ev.seat);
         break;
       }
       case 'guard': toast(ev.how === 'reflect' ? '反彈！' : ev.how === 'shield' ? '擋下了！' : '落空！', ev.seat); playSound('bell'); break;

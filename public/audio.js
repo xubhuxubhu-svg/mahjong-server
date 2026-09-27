@@ -96,6 +96,15 @@
         case 'pop':
           osc(D, 'sine', 900, t, 0.08, 0.1, 1400);
           break;
+        case 'question': // 「咦？」問號音效：往上滑的彈簧聲
+          osc(D, 'triangle', 420, t, 0.16, 0.22, 760);
+          osc(D, 'triangle', 620, t + 0.17, 0.28, 0.22, 1250);
+          osc(D, 'sine', 1250, t + 0.17, 0.28, 0.08, 2400);
+          break;
+        case 'whoosh': // 特效出場
+          noise(D, t, 0.45, 0.35, 'bandpass', 900, 0.8);
+          osc(D, 'sine', 260, t, 0.4, 0.06, 900);
+          break;
       }
     } catch (e) { }
   }

@@ -7,13 +7,19 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>台灣十六張麻將</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="fs-hint hidden" id="fsHint">點一下畫面，進入全螢幕</div>
+
 <div id="app">
 
   <!-- 大廳 -->
   <section id="lobby" class="screen">
+    <button class="lobby-music lobby-fs" id="lobbyFs">全螢幕</button>
     <button class="lobby-music" id="lobbyMusic">音樂：開</button>
     <div class="panel lobby-panel">
       <div class="logo">
@@ -57,6 +63,8 @@
           <select id="setBack"><option value="classic">經典綠</option><option value="red">喜氣紅</option><option value="star">星空藍</option><option value="gold">黑金</option><option value="sakura">櫻花粉</option><option value="bamboo">青竹</option></select>
           <span>桌巾</span>
           <select id="setCloth"><option value="classic">經典綠絨布</option><option value="shiny">反光綠絨布</option><option value="banquet">夜市紅桌墊</option><option value="navy">深藍絨布</option><option value="wood">木頭桌</option><option value="purple">紫色絨布</option></select>
+          <span>特效動畫</span>
+          <select id="setFx"><option value="on">開（有聲音）</option><option value="mute">開（不出聲）</option><option value="off">關閉</option></select>
           <span>技能道具</span>
           <select id="setSkills"><option value="1">開啟</option><option value="0">關閉（正統打法）</option></select>
           <span>電腦用技能</span>
@@ -145,6 +153,7 @@
         <div class="hand" id="hand"></div>
       </div>
       <div class="topbar">
+        <button class="icon-btn fs-btn" id="fsTop" title="全螢幕"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
         <button class="icon-btn talk-btn" id="talkBtn" title="垃圾話">話</button>
         <button class="icon-btn" id="menuBtn" title="選單">☰</button>
       </div>
@@ -156,6 +165,7 @@
     <div class="menu hidden" id="menu">
       <button class="btn" id="autoBtn">託管：關</button>
       <button class="btn" id="voiceBtn">語音：開</button>
+      <button class="btn" id="fxBtn">特效動畫：開</button>
       <button class="btn" id="musicBtn">背景音樂：開</button>
       <button class="btn" id="backBtn">換牌背</button>
       <button class="btn" id="clothBtn">換桌巾</button>
@@ -180,6 +190,7 @@
 <script src="shared/cards.js"></script>
 <script src="shared/game.js"></script>
 <script src="meta.js"></script>
+<script src="fxdata.js"></script>
 <script src="client.js"></script>
 <script src="metaui.js"></script>
 <script src="cloud.js"></script>

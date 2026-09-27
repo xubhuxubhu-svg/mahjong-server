@@ -261,6 +261,7 @@
       let packN = 0;
       if (PACKS[a.pack]) { cost += this.shopPrice('pack'); packN = this.applyPack(p, a.pack, swap); }
       const sd = this.hook('shopDiscount', seat) || 0;
+      if (sd && cost > 0 && p.char === 'c09') this.event({ type: 'passive', seat, char: p.char }); // 老吉「精打細算」有打到折才播
       if (sd) cost = Math.round(cost * (1 - sd));
       p.score -= cost;
       if (swap.length) {

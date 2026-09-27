@@ -174,32 +174,44 @@
     return d;
   }
 
+  // 被動能力發動：通知畫面播特效（同一局每人只通知一次，免得一直洗畫面）
+  function pv(g, s, extra) {
+    const p = g.players[s];
+    if (!p || !p.char || typeof g.event !== 'function') return;
+    g._pvSeen = g._pvSeen || {};
+    const key = g.handNo + ':' + s;
+    if (g._pvSeen[key]) return;
+    g._pvSeen[key] = true;
+    g.event(Object.assign({ type: 'passive', seat: s, char: p.char }, extra || {}));
+  }
+
   // ---------- 各人物的行為 ----------
   const B = {
     c01: {
       drawPred(g, s, p) {
         if (p.awake && rnd() < 0.6) return useful(p);
         if (p.fx.dog > 0) { p.fx.dog--; if (rnd() < 0.8) return useful(p); }
-        if (rnd() < 0.1) return useful(p);
+        if (rnd() < 0.1) { pv(g, s); return useful(p); }
       },
       skill(g, s, p) { p.fx.dog = 3; return true; },
     },
     c02: {
-      onClaim(g, s, p) { addQi(p, p.awake ? 3 : 1); },
+      onClaim(g, s, p) { addQi(p, p.awake ? 3 : 1); pv(g, s); },
       skill(g, s, p) { p.fx.anyChiUntil = p.discards + 3; return true; },
       awaken(g, s, p) { p.fx.anyChiUntil = 999; },
     },
     c03: {
-      onHandStart(g, s, p) { addQi(p, 2); },
+      onHandStart(g, s, p) { addQi(p, 2); pv(g, s); },
       skill(g, s, p) { for (const k of Object.keys(p.used)) if (k !== 'char') delete p.used[k]; return true; },
       awaken(g, s, p) { p.qi = 10; p.used = {}; },
     },
     c04: {
-      onEvent(g, s, p, ev) { if (ev.type === 'ting' && ev.seat !== s) p.fx.autoSafe = true; },
+      onEvent(g, s, p, ev) { if (ev.type === 'ting' && ev.seat !== s) { p.fx.autoSafe = true; pv(g, s); } },
       skill(g, s, p, a) { p.readTarget = a.target; p.readUntil = p.discards + 1; return true; },
       awaken(g, s, p) { p.readAll = true; },
     },
     c05: {
+      onHandStart(g, s, p) { pv(g, s); },
       drawPred(g, s, p) { if (p.awake && rnd() < 0.7) return improving(p); },
       skill(g, s, p) {
         const lone = loneTiles(p);
@@ -209,18 +221,18 @@
       },
     },
     c06: {
-      onTargeted(g, s, p) { if (p.awake) return 'block'; if (rnd() < 0.5) return 'block'; },
+      onTargeted(g, s, p) { if (p.awake) return 'block'; if (rnd() < 0.5) { pv(g, s); return 'block'; } },
       skill(g, s, p) { for (let o = 0; o < g.N; o++) if (o !== s) { const q = g.players[o]; if (!g.targetGuard(s, o)) q.fx.fogUntil = q.discards + 2; } return true; },
       awaken(g, s, p) { p.fx.inkAll = true; },
     },
     c07: {
-      onHandStart(g, s, p) { if (rnd() < 0.4) p.fx.shield = (p.fx.shield || 0) + 1; },
+      onHandStart(g, s, p) { if (rnd() < 0.4) { p.fx.shield = (p.fx.shield || 0) + 1; pv(g, s); } },
       onTargeted(g, s, p) { if (p.awake) return 'block'; },
       skill(g, s, p) { clearDebuffs(p); p.fx.shield = (p.fx.shield || 0) + 1; return true; },
       onSettle(g, s, p, info) { if (p.awake && info.loser === s) info.deltas[s] = Math.round(info.deltas[s] / 2); },
     },
     c08: {
-      skillDiscount(g, s, p, id) { return id === 'missile' || id === 'debuff' ? 2 : 0; },
+      skillDiscount(g, s, p, id) { if (id === 'missile' || id === 'debuff') { pv(g, s); return 2; } return 0; },
       skill(g, s, p, a) { const q = g.players[a.target]; if (g.targetGuard(s, a.target)) return true; q.fx.noClaimUntil = q.discards + 2; q.fx.noHuUntil = q.discards + 1; return true; },
       awaken(g, s, p) { addQi(p, 3); const w = wanted(g, s); if (w != null) p.forceNext = w; },
     },
@@ -235,7 +247,7 @@
       onScore(g, s, p) { return p.awake ? [['大甩賣', 3]] : []; },
     },
     c10: {
-      onClaim(g, s, p) { p.fx.served = true; if (p.awake) addQi(p, 2); },
+      onClaim(g, s, p) { p.fx.served = true; if (p.awake) addQi(p, 2); pv(g, s); },
       drawPred(g, s, p) { if (p.fx.served) { p.fx.served = false; return useful(p); } },
       skill(g, s, p, a) {
         const k = a.k;
@@ -248,22 +260,22 @@
       },
     },
     c11: {
-      onHandStart(g, s, p) { const opp = g.seats().filter(o => o !== s); const t = opp[Math.floor(rnd() * opp.length)]; g.players[t].fx.noClaimUntil = 1; },
+      onHandStart(g, s, p) { const opp = g.seats().filter(o => o !== s); const t = opp[Math.floor(rnd() * opp.length)]; g.players[t].fx.noClaimUntil = 1; pv(g, s, { target: t }); },
       skill(g, s, p, a) { const q = g.players[a.target]; if (g.targetGuard(s, a.target)) return true; q.fx.freeze = true; q.fx.noClaimUntil = q.discards + 1; return true; },
       awaken(g, s, p) { for (let o = 0; o < g.N; o++) if (o !== s && !g.targetGuard(s, o)) g.players[o].fx.freeze = true; },
     },
     c12: {
-      onHandStart(g, s, p) { p.fx.shield = (p.fx.shield || 0) + 1; },
+      onHandStart(g, s, p) { p.fx.shield = (p.fx.shield || 0) + 1; pv(g, s); },
       skill(g, s, p) { p.fx.shield = (p.fx.shield || 0) + 1; return true; },
       awaken(g, s, p) { p.fx.noDealIn = true; },
     },
     c13: {
-      qiBonus(g, s, p) { p.fx.charge = (p.fx.charge || 0) + 1; return p.fx.charge % 3 === 0 ? 1 : 0; },
+      qiBonus(g, s, p) { p.fx.charge = (p.fx.charge || 0) + 1; if (p.fx.charge % 3 === 0) { pv(g, s); return 1; } return 0; },
       skill(g, s, p, a) { const q = g.players[a.target]; if (g.targetGuard(s, a.target)) return true; q.qi = 0; q.fx.freeze = true; return true; },
       onScore(g, s, p, sc) { return p.awake && sc.total > 0 ? [['雷電爆發', sc.total]] : []; },
     },
     c14: {
-      onEvent(g, s, p, ev) { if (ev.type === 'flower' && ev.seat === s) addQi(p, 1); },
+      onEvent(g, s, p, ev) { if (ev.type === 'flower' && ev.seat === s) { addQi(p, 1); pv(g, s); } },
       skill(g, s, p) {
         const lone = loneTiles(p);
         let n = 0;
@@ -274,7 +286,7 @@
       onScore(g, s, p) { return p.awake ? [['滿載而歸', 2]] : []; },
     },
     c15: {
-      onTargeted(g, s, p) { if (rnd() < 0.5) return 'reflect'; },
+      onTargeted(g, s, p) { if (rnd() < 0.5) { pv(g, s); return 'reflect'; } },
       skill(g, s, p) {
         const opp = g.seats().slice(1).map(d => (s + d) % g.N).filter(o => g.players[o].hand.length);
         const give = opp.map(o => { const q = g.players[o]; const i = Math.floor(rnd() * q.hand.length); return q.hand.splice(i, 1)[0]; });
@@ -290,6 +302,7 @@
         const b = suit.indexOf(Math.max(...suit));
         p.fx.luck = c.slice(27, 34).reduce((a, b2) => a + b2, 0) >= 6 ? 'honor' : ['man', 'pin', 'sou'][b];
         p.fx.luckLeft = 3;
+        pv(g, s);
       },
       drawPred(g, s, p) { if (p.awake && rnd() < 0.5) return useful(p); },
       skill(g, s, p) {

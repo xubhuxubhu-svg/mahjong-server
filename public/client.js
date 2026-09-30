@@ -1869,6 +1869,7 @@
   }
   $('creditsLobby').innerHTML = creditsHTML();
   $('creditsBtn').onclick = () => { $('menu').classList.add('hidden'); dialog(`<div class="credits-dlg">${creditsHTML()}</div>`, [['關閉', null]]); };
+  $('noticeBtn').onclick = () => { $('menu').classList.add('hidden'); dialog($('noticeLobby').innerHTML, [['關閉', null]]); };
   $('quitBtn').onclick = () => {
     const inGame = (view && view.phase === 'play' && !view.gameOver) || mode === 'adv';
     if (!inGame) return quit();

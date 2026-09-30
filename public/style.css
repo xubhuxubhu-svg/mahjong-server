@@ -858,3 +858,12 @@ body[data-cloth="purple"] .tbl { background: radial-gradient(ellipse at center, 
 .fx-center.morph::after { content: ''; position: absolute; inset: -40vh; background: radial-gradient(circle, #fff 0 10%, rgba(255,240,190,.8) 25%, transparent 60%); animation: holyflash .8s ease-out both; pointer-events: none; }
 @keyframes holyspin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 @keyframes holyflash { from { opacity: 1; } to { opacity: 0; } }
+
+/* 使用聲明 */
+.notice-box { text-align: left; background: linear-gradient(180deg, #2a0f14, #1a0a0e); border: 1px solid #b8893a; border-radius: 12px; padding: 14px 16px; box-shadow: inset 0 0 18px rgba(0,0,0,.5); }
+.notice-box h4 { margin: 0 0 10px; text-align: center; color: #f3c55b; letter-spacing: 4px; font-size: 16px; }
+.notice-box p { margin: 0 0 8px; color: #f4ead8; font-size: 14px; line-height: 1.75; font-weight: 600; }
+.notice-box p:last-child { margin-bottom: 0; }
+.dlg .notice-box { max-width: 460px; }
+.overlay.dlg .res { max-height: 92vh; overflow-y: auto; }
+@media (max-height: 500px) { .dlg .notice-box { padding: 10px 12px; } .dlg .notice-box p { font-size: 13px; line-height: 1.6; margin-bottom: 5px; } .dlg .notice-box h4 { margin-bottom: 6px; } }
